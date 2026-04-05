@@ -2,6 +2,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+from api.routes import query, ingest, evaluation, health
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -32,6 +34,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Include routers
+    prefix="/api/v1"
+    app.include_router(query.router, prefix=prefix)
+    app.include_router(ingest.router, prefix=prefix)
+    app.include_router(evaluation.router, prefix=prefix)
+    app.include_router(health.router, prefix=prefix)
 
     return app
 
