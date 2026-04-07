@@ -48,59 +48,59 @@ class InputGuard:
     def __init__(self):
         self._settings = get_settings()
 
-        def check(self, text: str) -> GuardrailResult:
-            t0 = time.perf_counter()
-            with traced_span("guardrail.input"):
-                result = self._run_checks(text)
-                
-            result.latency_ms = (time.perf_counter() - t0) * 1000
-
-            if result.action != GuardrailAction.ALLOW:
-                log.warning("Input guardrail blocked request", extra={"guardrail": "input", "action": result.action.value, "reason": result.reason})
+    def check(self, text: str) -> GuardrailResult:
+        t0 = time.perf_counter()
+        with traced_span("guardrail.input"):
+            result = self._run_checks(text)
             
-                GUARDTAIL_BLOCKS.labels(stage="input", reason = result.reason or "unknown").inc()
-            return result
+        result.latency_ms = (time.perf_counter() - t0) * 1000
 
-        def _run_checks(self, text: str) -> GuardrailResult:
-            if len(text) > self._settings.input_max_chars:
-                return GuardrailResult(
-                    action = GuardrailAction.BLOCK,
-                    reason = "input_too_long",
-                )
-            
-            if _INJECTION_RE.search(text):
-                return GuardrailResult(
-                    action = GuardrailAction.BLOCK,
-                    reason = "Potential Prompt Injection Detected"
-                )
+        if result.action != GuardrailAction.ALLOW:
+            log.warning("Input guardrail blocked request", extra={"guardrail": "input", "action": result.action.value, "reason": result.reason})
+        
+            GUARDTAIL_BLOCKS.labels(stage="input", reason = result.reason or "unknown").inc()
+        return result
 
-            lower = text.lower()
-            for topic in self._settings.blocked_topics:
-                if topic.lower() in lower:
-                    return GuardrailResult(
-                        action = GuardrailAction.BLOCK,
-                        reason = "blocked_topic"
-                    )
-            
-            if self._settings.pii_detection:
-                redacted, found = self._redact_pii(text)
-                if found:
-                    return GuardrailResult(
-                        action = GuardrailAction.REDACT,
-                        reason = "pii_detected",
-                        redacted_text = redacted
-                    )
-                
+    def _run_checks(self, text: str) -> GuardrailResult:
+        if len(text) > self._settings.input_max_chars:
             return GuardrailResult(
-                action = GuardrailAction.ALLOW,
-                reason = "allowed"
+                action = GuardrailAction.BLOCK,
+                reason = "input_too_long",
+            )
+        
+        if _INJECTION_RE.search(text):
+            return GuardrailResult(
+                action = GuardrailAction.BLOCK,
+                reason = "Potential Prompt Injection Detected"
             )
 
-        def _redact_pii(self, text: str) -> tuple[str, list[str]]:
-            found: list[str] = []
-            for name, pattern in _PII_PATTERNS:
-                if pattern.search(text):
-                    found.append(name)
-                    text = pattern.sub(f"[REDACTED_{name.upper()}]", text)
-            return text, found
+        lower = text.lower()
+        for topic in self._settings.blocked_topics:
+            if topic.lower() in lower:
+                return GuardrailResult(
+                    action = GuardrailAction.BLOCK,
+                    reason = "blocked_topic"
+                )
+        
+        if self._settings.pii_detection:
+            redacted, found = self._redact_pii(text)
+            if found:
+                return GuardrailResult(
+                    action = GuardrailAction.REDACT,
+                    reason = "pii_detected",
+                    redacted_text = redacted
+                )
+            
+        return GuardrailResult(
+            action = GuardrailAction.ALLOW,
+            reason = "allowed"
+        )
+
+    def _redact_pii(self, text: str) -> tuple[str, list[str]]:
+        found: list[str] = []
+        for name, pattern in _PII_PATTERNS:
+            if pattern.search(text):
+                found.append(name)
+                text = pattern.sub(f"[REDACTED_{name.upper()}]", text)
+        return text, found
             
