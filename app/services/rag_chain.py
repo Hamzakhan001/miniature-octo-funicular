@@ -145,7 +145,7 @@ class RAGService:
             rerank_top_n: int=3,
         ) -> dict:
             try:
-                from llama_index.core import VectoIndex
+                from llama_index.core import VectorStoreIndex
                 from llama_index.postprocessor.cohere_rerank import CohereRerank
             except ImportError:
                 logger.warning("Cohere Rerank not available. Install llama-index-postprocessor-cohere-rerank")
@@ -162,6 +162,6 @@ class RAGService:
             )
             answer = llm_sync.invoke(prompt_value).content
             return {"answer": answer, "sourcs":[{"content": d.page_content[:300], metadata: d.metadata} for d in docs]}
-            
+
 
             
