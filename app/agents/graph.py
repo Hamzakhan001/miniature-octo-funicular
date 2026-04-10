@@ -39,7 +39,7 @@ def build_graph(vs, rag):
 
 
     graph.set_entry_point("retrieve")
-    graph.add_node("grade_docs", grade_docs)
+    graph.add_edge("retrieve", "grade_docs")
     graph.add_conditional_edges(
         "grade_docs", _route_after_grade
     )
@@ -48,6 +48,6 @@ def build_graph(vs, rag):
     
     return graph.compile()
 
-    
+
 
 
