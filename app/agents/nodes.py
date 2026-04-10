@@ -25,7 +25,7 @@ async def grad_docs(state: AgentState) -> AgentState:
 
     settings = get_settings()
     context = "\n --- \n".join(d.page_content[:300] for d in state["docs"][:3])
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
     try:
         response = await client.chat.completions.create(
             model = settings.openai_chat_model,
@@ -53,4 +53,47 @@ async def grad_docs(state: AgentState) -> AgentState:
     
     return {**state, "grade": grade}
 
+
+async def rewrite_query(state: AgentState) -> AgentState:
+    settings = get_settings()
+
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+    try:
+        response = await client.chat.completions.create(
+            model = settings.openai_chat_model,
+            temperature=0.3,
+            max_tokens=100,
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Rewrite the question to be more specific and retrival friendly"
+                        "Output ONLY the rewritten question, nothing else"
+                    ),
+                },
+                {
+                    "role":"user",
+                    "content": state["question"]
+                }
+            ]
+        )
+
+        rewritten = response.choices[0].message.content.strip()
+
+    except Exception as e:
+        logger.warning("agent_rewrite_failed", error=str(e))
+        rewritten = state["question"]
+    
+    return {
+        **state,
+        "rewritten_question": rewritten,
+        "rety_count": state.get("retry_count", 0)+1
+    }
+
+
+async def generate(state: AgentState, rag) -> AgentState:
+    question = state.get("rewritten_question") or state["question"]
+    result = await rag.aquery(question=question, docs=state["docs"])
+    return {**state, "answer": result["answer"], "sources": result["sources"]}
 
