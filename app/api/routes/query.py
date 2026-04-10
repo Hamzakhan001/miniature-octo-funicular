@@ -130,6 +130,21 @@ async def query_stream(body: QueryRequest):
     )
 
 
+@router.post("/agent", 
+            response_model=RAGResponse, 
+            summary="Agent RAG with guardrails",
+            description = (
+                "Langgraph-powered agent RAG with adaptive retrieval:\n\n"
+                "1- **Input Guardrail** - injection detection, PII redaction, topic blocking\n"
+                "2- **HybridRetrieval** - Semantic + keyword search with reranking\n"
+                "3- **Relevance Grading** - LLM as a judge if docs answer the question\n"
+                "4- **Query Rewrite** - query reformulation if docs are poor"
+                "(up to 2 retries)\n"
+                "5- **Generation** - LLM response with context\n"
+                "6- **Output Guardrail** - safety and quality checks\n"
+                "This endpoint will be used when retrival quality matters the most"
+            )
+)
 async def agent_query(body: QueryRequest):
     """
     Agentic RAG via LangGraph
