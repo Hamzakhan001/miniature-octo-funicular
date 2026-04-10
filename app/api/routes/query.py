@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.core.models import DocumentChunk, GuardRailAction, QueryRequest, RAGResponse
+from app.core.models import DocumentChunk, GuardrailAction, QueryRequest, RAGResponse
 from app.rag.pipeline import RAGPipeline, _RAG_SYSTEM_PROMPT, _build_context
 from app.core.logging import log
 
@@ -68,7 +68,7 @@ async def query(
 @router.post(
     "/stream",
     summary="Streaimg RAG query(sse)",
-    descripton = (
+    description = (
         "Server sent events streaming endpoit \n"
         "Tokens are yielded as they are generated \n"
         "Input guard runs before streaming starts \n"

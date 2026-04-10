@@ -17,7 +17,7 @@ class RAGService:
     def __init__(self, vector_store: VectorStoreService) -> None:
         self.settings = get_settings()
         self.vector_store = vector_store
-        self._client = AsyncOpenAI(api_key=self.settings.open_ai_api_key)
+        self._client = AsyncOpenAI(api_key=self.settings.openai_api_key)
 
     async def astream(self, question: str) -> AsyncGenerator[str, None]:
         result = await self.aquery(question=question)

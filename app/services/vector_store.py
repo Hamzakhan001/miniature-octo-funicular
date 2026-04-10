@@ -22,10 +22,10 @@ class VectorStoreService:
     def __init__(self):
         self.settings = get_settings()
         self._pc = Pinecone(api_key=self.settings.pinecone_api_key)
-        self._async_openai = AsyncOpenAI(api_key=self.settings.open_ai_api_key)
+        self._async_openai = AsyncOpenAI(api_key=self.settings.openai_api_key)
         self._embeddings = OpenAIEmbeddings(
             model=self.settings.openai_embedding_model,
-            openai_api_key=self.settings.open_ai_api_key,
+            openai_api_key=self.settings.openai_api_key,
         )
         self._store: Optional[PineconeVectorStore] = None
         self._ensure_index()
