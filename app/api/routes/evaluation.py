@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from typing import List
+
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List, Optional
-
 
 from app.core.logging import log
+from app.services.evaluation import EvaluationService
+
 router = APIRouter(prefix="/eval", tags=["Evaluation"])
+evaluator = EvaluationService()
 
 
 class EvalRequest(BaseModel):
@@ -16,31 +19,26 @@ class EvalRequest(BaseModel):
 
 
 class EvalResponse(BaseModel):
-    faithfulness: Optional[float] = None
-    relevance: Optional[float] = None
-    note: str = ""
-    
-@router.post("", response_model= EvalResponse, summary="Evaluate answer quality")
-def evaluate(body: EvalRequest):
+    faithfulness: float
+    relevance: float
+    context_coverage: float
+    note: str
+
+
+@router.post("", response_model=EvalResponse, summary="Evaluate answer quality")
+def evaluate(body: EvalRequest) -> EvalResponse:
     try:
-        question_words = set(body.question.lower().split())
-        answer_words = set(body.answer.lower().split())
-        context_text = " ".join(body.context).lower()
-        context_words = set(context_text.split())
-
-        relevance = (
-            len(question_words & answer_words) / len(question_words) if question_words else 0.0
+        result = evaluator.evaluate(
+            question=body.question,
+            answer=body.answer,
+            context=body.context,
         )
-
-        faithfulness = (
-            len(answer_words & context_words) / len(answer_words) if answer_words else 0.0
-        )
-        
         return EvalResponse(
-            faithfulness=round(faithfulness, 3),
-            relevance=round(relevance, 3),
-            note="Heuristic evaluation based on word overlap"
+            faithfulness=round(result.faithfulness, 3),
+            relevance=round(result.relevance, 3),
+            context_coverage=round(result.context_coverage, 3),
+            note=result.note,
         )
-    except Exception as e:
-        log.error(f"Error evaluating answer: {e}")
-        raise e
+    except Exception as exc:
+        log.exception("evaluation_failed", error=str(exc))
+        raise
