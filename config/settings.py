@@ -36,7 +36,12 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 3600
 
     app_env: Literal["development", "production", "test"] = "development"
-    cors_origins: Any = "http//localhost:3000"
+    cors_origins: Any = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173"
+    )
     api_key_header: str = "X-API-Key"
     api_keys: Any = ""
     app_secret_key: str = "change-me"

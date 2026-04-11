@@ -1,4 +1,4 @@
-""""Thin wrapper used by ingest.py"""
+"""Thin wrapper used by ingest.py"""
 
 from app.services.ingestion import IngestionService as IngestionPipeline
 from app.core.mdoels import IngestResult

@@ -46,7 +46,7 @@ def get_ingestion():
 async def ingest_text(body: IngestionTextRequest):
     try:
         ingestion = get_ingestion()
-        ids = await ingestion.ingest_text(body.text, body.metadata, source=body.source)
+        ids = await ingestion.ingest_text(body.text, source=body.source, metadata=body.metadata)
         return IngestionResult(status="ok", chunks=len(ids), ids=ids)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -67,6 +67,57 @@ async def ingest_file(file: UploadFile = File(...)):
             )
 
         content = await file.read()
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Max size: {MAX_FILE_SIZE / 1024 / 1024}MB",
+            )
+
+        filename = file.filename or "upload"
+
+        if len(content) < SYNC_THRESHOLD_BYTES:
+            ingestion = get_ingestion()
+            ids = await ingestion.ingest_file(content, filename)
+            return IngestionResult(status="ok", chunks=len(ids), ids=ids)
+
+        job_id = f"job_{int(time.time())}"
+        try:
+            from app.worker import ingest_file_task
+
+            task = ingest_file_task.delay(
+                content.hex(),
+                filename,
+                {"source": filename, "queued_at": time.time()},
+            )
+            return AsyncIngestResponse(
+                job_id=task.id if getattr(task, "id", None) else job_id,
+                status="queued",
+                filename=filename,
+                message="File queued for processing.",
+                check_status_url=f"/api/v1/ingest/status/{job_id}",
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def ingest_file(file: UploadFile = File(...)):
+    try:
+        print("file_debug",file)
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in SUPPORTED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type. Supported types: {SUPPORTED_EXTENSIONS}",
+            )
+
+        content = await file.read()
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=413,
@@ -76,7 +127,10 @@ async def ingest_file(file: UploadFile = File(...)):
         filename = file.filename or "upload"
         if len(content) < SYNC_THRESHOLD_BYTES:
             ingestion = get_ingestion()
-            ids = await ingestion.ingest_file(file.file, filename)
+            content = await file.read()
+            filename = file.filename or "upload"
+
+            ids = await ingestion.ingest_file(content, filename)
             return IngestionResult(status="ok", chunks=len(ids), ids=ids)
 
         job_id = f"job_{int(time.time())}"
