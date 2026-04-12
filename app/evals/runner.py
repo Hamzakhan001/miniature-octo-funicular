@@ -14,7 +14,7 @@ class BenchmarkCase:
     category: str
     question: str
     reference_answer: str
-    reference_context: list[str]
+    reference_contexts: list[str]
     expected_sources: list[str]
     should_answer: bool
     difficulty: str
@@ -41,7 +41,7 @@ class RagasBenchmarkRunner:
         self.pipeline = RAGPipeline()
 
     def load_cases(self) -> list[BenchmarkCase]:
-        cases: list[BenchmarkBase] = []
+        cases: list[BenchmarkCase] = []
         for line in self.dataset_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
@@ -54,19 +54,26 @@ class RagasBenchmarkRunner:
         cases= self.load_cases()
         rows: list[BenchmarkRunRow] = []
         
-        for case in cases:
-            response = await self.pipeline.run(
-                question = case.question,
-                top_k = top_k,
-                run_eval = False
-            )
+        print(f"Loaded {len(cases)} cases")
+        
+        for i, case in enumerate(cases):
+            try:
+                print(f"Processing case {i+1}: {case.question[:50]}...")
+                response = await self.pipeline.run(
+                    question = case.question,
+                    top_k = top_k,
+                    run_eval = False
+                )
+            except Exception as e:
+                print(f"Error processing case {i+1}: {e}")
+                continue
 
-            sources_name = [
+            sources_names = [
                 source.get("metadata", {}).get("source", "unkown")
                 for source in response.sources
             ]
 
-            source_hit = any(src in source_names for src in case.expected_sources) if case.expected_sources else False
+            source_hit = any(src in sources_names for src in case.expected_sources) if case.expected_sources else False
             answered = bool(response.answer and "[BLOCKED]" not in response.answer)
 
             rows.append(
@@ -77,7 +84,7 @@ class RagasBenchmarkRunner:
                     question=case.question,
                     should_answer=case.should_answer,
                     answer=response.answer,
-                    sources=source_name,
+                    sources=sources_names,
                     docs_retrieved=len(response.sources),
                     latency_ms=response.latency_ms,
                     eval_scores=response.eval_scores,
@@ -89,7 +96,7 @@ class RagasBenchmarkRunner:
 
         summary= {
             "total_cases":len(rows),
-            "avg_latency_ms": mean(row.latency_ms for row in rows) if rows else 0.0
+            "avg_latency_ms": mean(row.latency_ms for row in rows) if rows else 0.0,
             "avg_docs_retrieved": mean(row.docs_retrieved for row in rows) if rows else 0.0,
             "source_hit_rate": (
                 sum(1 for row in rows if row.source_hit)/len(rows) if rows else 0.0
@@ -99,37 +106,39 @@ class RagasBenchmarkRunner:
             ),
             "ragas": ragas_score,
         }
+        
+        return summary
 
-        def _run_ragas(
-            self,
-            cases: list[BenchmarkCase],
-            rows: list[BenchmarkRunRow]
-        ) -> dict[str, float] | None:
-            try:
-                from datasets import Dataset
-                from ragas import evaluate
-                from ragas.metrices import answer_relevancy, context_precision, context_recall
-            except ImportError:
-                return None
+    def _run_ragas(
+        self,
+        cases: list[BenchmarkCase],
+        rows: list[BenchmarkRunRow]
+    ) -> dict[str, float] | None:
+        try:
+            from datasets import Dataset
+            from ragas import evaluate
+            from ragas.metrices import faithfulness, answer_relevancy, context_recall
+        except ImportError:
+            return None
 
-            dataset = Dataset.from_dict({
-                "question": [case.question for case in cases],
-                "answer": [row.answer for row in rows],
-                "contexts": [case.reference_context for case in cases],
-                "ground_truths": [case.reference_answer for case in cases]
-            })
-            result = evaluate(
-                dataset,
-                metrics= [faithfulness, answer_relevancy, context_recall]
-            )
+        dataset = Dataset.from_dict({
+            "question": [case.question for case in cases],
+            "answer": [row.answer for row in rows],
+            "contexts": [case.reference_contexts for case in cases],
+            "ground_truths": [case.reference_answer for case in cases]
+        })
+        result = evaluate(
+            dataset,
+            metrics= [faithfulness, answer_relevancy, context_recall]
+        )
 
-            result_dict = result.to_pandas().mean(numeric_only=True).to_dict()
+        result_dict = result.to_pandas().mean(numeric_only=True).to_dict()
 
-            return {
-                "faithfulness": float(result_dict.get("faithfulness", 0.0)),
-                "answer_relevancy": float(result_dict.get("answer_relevancy", 0.0)),
-                "context_recall": float(result_dict.get("context_recall", 0.0)),
-            }
+        return {
+            "faithfulness": float(result_dict.get("faithfulness", 0.0)),
+            "answer_relevancy": float(result_dict.get("answer_relevancy", 0.0)),
+            "context_recall": float(result_dict.get("context_recall", 0.0)),
+        }
 
 
 

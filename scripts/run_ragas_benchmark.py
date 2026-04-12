@@ -7,10 +7,10 @@ from pathlib import Path
 
 from app.evals.runner import RagasBenchmarkRunner
 
-DATASET_PATH = Path("data/benchmark_dataset.jsonl")
+DATASET_PATH = Path("data/benchmark_seed.jsonl")
 OUTPUT_DIR = Path("data/eval_reports")
 
-aync def main() -> None:
+async def main() -> None:
     runner = RagasBenchmarkRunner(DATASET_PATH)
     result = await runner.run(top_k=5)
 
