@@ -11,10 +11,10 @@ class QueryAuditRecord(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     question: str
     top_k: Optional[int] = None
-    retrival_method: str 
+    retrieval_method: str 
     docs_retrieved: int = 0
     sources: list[str] = Field(default_factory=list)
-    ansewer_length: int = 0
+    answer_length: int = 0
     outcome: str
     run_eval: bool = False
     eval_scores: Optional[dict[str, float]] = None

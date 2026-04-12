@@ -5,6 +5,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+from app.observability.audit_writer import write_audit_record
+from app.observability.audit import QueryAuditRecord
 from app.core.logging import log
 from app.core.models import DocumentChunk, GuardrailAction, RAGResponse
 from app.guardrails.input_guard import InputGuard
@@ -65,6 +67,7 @@ class RAGPipeline:
         run_eval: bool = False,
         use_hybrid: bool = True,
     ) -> RAGResponse:
+        stage_latencies_ms: dict[str, float] = {}
         t0 = time.perf_counter()
         loop = asyncio.get_running_loop()
         retrieval_method = "hybrid" if use_hybrid else "semantic"
@@ -99,6 +102,7 @@ class RAGPipeline:
                     guard_action=input_result.action,
                     elapsed_time_ms=round((time.perf_counter() - t0) * 1000, 1),
                 )
+                stage_latencies_ms["input_and_classification"]=(time.perf_counter()-stage_start)*1000
 
                 if not classification.get("should_proceed", True):
                     outcome = "out_of_scope"
@@ -149,6 +153,7 @@ class RAGPipeline:
                     docs_retrieved=len(docs),
                     elapsed_time_ms=round((time.perf_counter() - t0) * 1000, 1),
                 )
+                stage_latencies_ms["retrieval"]=(time.perf_counter()-stage_start)*1000
 
                 stage_start = time.perf_counter()
                 with traced_span("rag.generation", {"rag.docs_retrieved": len(docs)}) as generation_span:
@@ -161,6 +166,7 @@ class RAGPipeline:
                 observe_stage_latency("generation", time.perf_counter() - stage_start)
                 observe_answer_length(answer)
                 log.info("stage3_generation_completed", answer_length=len(answer), sources=len(sources))
+                stage_latencies_ms["generation"] = (time.perf_counter() - stage_start) * 1000
 
                 chunks = [
                     DocumentChunk(text=source["content"], metadata=source.get("metadata", {}))
@@ -208,6 +214,7 @@ class RAGPipeline:
                         mark_span_success(eval_span)
                     observe_stage_latency("evaluation", time.perf_counter() - stage_start)
                     observe_eval_scores(eval_scores)
+                    stage_latencies_ms["evaluation"] = (time.perf_counter() - stage_start) * 1000
 
                 response = RAGResponse(
                     answer=final_answer,
@@ -216,6 +223,20 @@ class RAGPipeline:
                     eval_scores=eval_scores,
                     latency_ms=(time.perf_counter() - t0) * 1000,
                 )
+                audit = QueryAuditRecord(
+                question=question,
+                top_k=top_k,
+                retrieval_method=retrieval_method,
+                docs_retrieved=len(sources),
+                sources=[source.get("metadata", {}).get("source", "unknown") for source in sources],
+                answer_length=len(final_answer),
+                outcome=outcome,
+                run_eval=run_eval,
+                eval_scores=eval_scores,
+                total_latency_ms=(time.perf_counter() - t0) * 1000,
+                stage_latencies_ms=stage_latencies_ms,
+                )
+                write_audit_record(audit.model_dump())
                 mark_span_success(query_span)
                 return response
             except Exception as exc:

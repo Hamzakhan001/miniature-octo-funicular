@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.middleware import AuthMiddleware, RequestIDMiddleware, RequestLoggingMiddleware
-from app.api.routes import evaluation, health, ingest, query
+from app.api.routes import audit, evaluation, health, ingest, query
 from app.core.logging import setup_logging
 from app.observability import configure_metrics, configure_tracing
 from config.settings import get_settings
@@ -49,7 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest.router, prefix=prefix)
     app.include_router(evaluation.router, prefix=prefix)
     app.include_router(health.router, prefix=prefix)
-
+    app.include_router(audit.router, prefix=prefix)
     configure_metrics(app)
     return app
 

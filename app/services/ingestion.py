@@ -6,12 +6,15 @@ import tempfile
 from asyncio import Semaphore
 from pathlib import Path
 from typing import List, Optional
+import time
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter
 
+from app.observability.audit import IngestionAuditRecord
+from app.observability.audit_writer import write_audit_record
 from app.core.config import get_settings
 from app.core.logging import logger
 from app.services.vector_store import VectorStoreService
@@ -43,9 +46,20 @@ class IngestionService:
         source: str = "manual",
         metadata: Optional[dict] = None,
     ) -> List[str]:
+        t0 = time.perf_counter()
         chunks = await asyncio.to_thread(self._chunk_text_sync, text, source, metadata or {})
         ids = await self._batch_upsert(chunks)
         logger.info("ingested_text", source=source, count=len(ids))
+        audit = IngestionAuditRecord(
+            source_name=source,
+            source_type="text",
+            status="success",
+            chunks_created=len(chunks),
+            vectors_upserted=len(ids),
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            metadata=metadata or {},
+        )
+        write_audit_record(audit.model_dump())
         return ids
 
     async def ingest_file(
@@ -54,6 +68,7 @@ class IngestionService:
         filename: str,
         metadata: Optional[dict] = None,
     ) -> List[str]:
+        t0 = time.perf_counter()
         chunks = await asyncio.to_thread(
             self._parse_and_chunk_sync,
             file_bytes,
@@ -63,6 +78,16 @@ class IngestionService:
         logger.info("file_parsed", filename=filename, chunks_before_upsert=len(chunks))
         ids = await self._batch_upsert(chunks)
         logger.info("file_ingested", filename=filename, count=len(ids))
+        audit = IngestionAuditRecord(
+        source_name=filename,
+        source_type=Path(filename).suffix.lower().lstrip(".") or "file",
+        status="success",
+        chunks_created=len(chunks),
+        vectors_upserted=len(ids),
+        latency_ms=(time.perf_counter() - t0) * 1000,
+        metadata=metadata or {},
+        )
+        write_audit_record(audit.model_dump())
         return ids
 
     async def ingest_directory(self, directory: str, metadata: Optional[dict] = None) -> List[str]:
