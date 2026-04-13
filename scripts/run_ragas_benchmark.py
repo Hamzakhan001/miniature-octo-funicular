@@ -14,6 +14,19 @@ async def main() -> None:
     runner = RagasBenchmarkRunner(DATASET_PATH)
     result = await runner.run(top_k=5)
 
+    faithfulness = result["ragas"]["faithfulness"]
+    answer_relevancy = result["ragas"]["answer_relevancy"]
+    context_recall = result["ragas"]["context_recall"]
+
+    if faithfulness < 0.70:
+        raise SystemExit("Faithfulness score is below 0.70")
+    
+    if answer_relevancy < 0.60:
+        raise SystemExit("Answer relevancy score is below 0.60")
+    
+    if context_recall < 0.70:
+        raise SystemExit("Context recall score is below 0.70")
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_path = OUTPUT_DIR/ f"ragas_benchmark_{timestamp}.json"
