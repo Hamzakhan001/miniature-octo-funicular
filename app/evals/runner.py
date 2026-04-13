@@ -50,7 +50,7 @@ class RagasBenchmarkRunner:
             cases.append(BenchmarkCase(**raw))
         return cases
     
-    async def run(self, top_k: int = 3) -> dict[str, Any]:
+    async def run(self, top_k: int = 5, use_hybrid: bool = True, alpha: float = 0.5) -> dict[str, Any]:
         cases= self.load_cases()
         rows: list[BenchmarkRunRow] = []
         
@@ -58,12 +58,21 @@ class RagasBenchmarkRunner:
         
         for i, case in enumerate(cases):
             try:
+                print("RUN CONFIG:", {
+                    "top_k": top_k,
+                    "use_hybrid": use_hybrid,
+                    "alpha": alpha,
+                })
+                print(f"Processing {case.id}: use_hybrid={use_hybrid}, top_k={top_k}, alpha={alpha}")
+
                 print(f"Processing case {i+1}: {case.question[:50]}...")
                 response = await self.pipeline.run(
-                    question = case.question,
-                    top_k = top_k,
-                    run_eval = False
+                    question=case.question,
+                    top_k=top_k,
+                    run_eval=False,
+                    use_hybrid=use_hybrid,
                 )
+
             except Exception as e:
                 print(f"Error processing case {i+1}: {e}")
                 continue
@@ -92,6 +101,9 @@ class RagasBenchmarkRunner:
                     answered=answered
                 )
             )
+        if not rows:
+            raise RuntimeError("No benchmark rows were generated; skipping Ragas evaluation.")
+
         ragas_score = self._run_ragas(cases, rows)
 
         summary= {

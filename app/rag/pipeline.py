@@ -129,13 +129,20 @@ class RAGPipeline:
                 effective_question = input_result.redacted_text or question
                 stage_start = time.perf_counter()
                 with traced_span("rag.retrieval", {"rag.retrieval_method": retrieval_method}) as retrieval_span:
+                    print("PIPELINE RETRIEVAL CONFIG:", {
+                        "use_hybrid": use_hybrid,
+                        "top_k": top_k,
+                    })
+
                     if use_hybrid:
+                        print("USING HYBRID SEARCH")
                         docs = await self._vs.hybrid_search(
                             query=effective_question,
                             top_k=top_k or self.settings.top_k,
                             filter=filter,
                         )
                     else:
+                        print("USING SEMANTIC SEARCH")
                         docs = await self._vs.similarity_search(
                             query=effective_question,
                             top_k=top_k or self.settings.top_k,
