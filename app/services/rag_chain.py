@@ -46,13 +46,12 @@ class RAGService:
                 {
                     "role": "system",
                     "content": (
-                        "You are a retrieval-augmented assistant. "
-                        "Answer the user's question using only the provided context. "
+                       "Answer the user's question using only the provided context. "
                         "If the context contains enough information, answer clearly and directly. "
                         "If the context does not contain the answer, say that the answer is not available in the provided documents. "
-                        "Do not fabricate facts or rely on outside knowledge.\n\n"
+                        "Do not fabricate facts or rely on outside knowledge. "
+                        "Prefer a concise answer and avoid unnecessary extra explanation.\n\n"
                         f"Context:\n{context}"
-
                     ),
                 },
                 {"role": "user", "content": question},

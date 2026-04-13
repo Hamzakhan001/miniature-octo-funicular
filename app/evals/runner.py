@@ -29,6 +29,7 @@ class BenchmarkRunRow:
     should_answer: bool
     answer: str
     sources: list[str]
+    retrieved_contexts: list[str]
     docs_retrieved: int
     latency_ms: float
     eval_scores: dict[str, float] | None
@@ -82,6 +83,12 @@ class RagasBenchmarkRunner:
                 for source in response.sources
             ]
 
+            retrieved_contexts = [
+                source.get("content", "")
+                for source in response.sources
+            ]
+
+
             print("QUESTION:", case.question)
             print("ANSWER:", response.answer)
             print("SOURCES:", sources_names)
@@ -99,6 +106,7 @@ class RagasBenchmarkRunner:
                     should_answer=case.should_answer,
                     answer=response.answer,
                     sources=sources_names,
+                    retrieved_contexts=retrieved_contexts,
                     docs_retrieved=len(response.sources),
                     latency_ms=response.latency_ms,
                     eval_scores=response.eval_scores,
@@ -162,12 +170,20 @@ class RagasBenchmarkRunner:
             raise RuntimeError(f"Ragas evaluation failed: {exc}") from exc
 
 
+        # dataset = Dataset.from_dict({
+        #     "question": [case.question for case in cases],
+        #     "answer": [row.answer for row in rows],
+        #     "contexts": [case.reference_contexts for case in cases],
+        #     "reference": [case.reference_answer for case in cases]
+        # })
+
         dataset = Dataset.from_dict({
-            "question": [case.question for case in cases],
-            "answer": [row.answer for row in rows],
-            "contexts": [case.reference_contexts for case in cases],
-            "reference": [case.reference_answer for case in cases]
+        "question": [row.question for row in rows],
+        "answer": [row.answer for row in rows],
+        "contexts": [row.retrieved_contexts for row in rows],
+        "reference": [case.reference_answer for case in cases],
         })
+
         result = evaluate(
             dataset,
             metrics=[faithfulness_metric, answer_relevancy_metric, context_recall_metric],
