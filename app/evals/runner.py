@@ -119,17 +119,55 @@ class RagasBenchmarkRunner:
 
         ragas_score = self._run_ragas(cases, rows)
 
-        summary= {
-            "total_cases":len(rows),
+        answerable_rows = [row for row in rows if row.should_answer]
+        unanswerable_rows = [row for row in rows if not row.should_answer]
+        
+        category_summary = {}
+        for category in sorted(set(row.category for row in rows)):
+            category_rows = [row for row in rows if row.category == category]
+
+            category_summary[category] = {
+                "count": len(category_rows),
+                "hit_rate_at_k": (
+                    sum(1 for row in category_rows if row.source_hit)/len(category_rows) if category_rows else 0.0
+                ),
+                "avg_docs_retrieved": (
+                    mean(row.docs_retrieved for row in category_rows)
+                    if category_rows else 0.0
+                )
+            }
+
+        summary = {
+            "total_cases": len(rows),
             "avg_latency_ms": mean(row.latency_ms for row in rows) if rows else 0.0,
             "avg_docs_retrieved": mean(row.docs_retrieved for row in rows) if rows else 0.0,
-            "source_hit_rate": (
+            "hit_rate_at_k":(
                 sum(1 for row in rows if row.source_hit)/len(rows) if rows else 0.0
             ),
             "answer_rate": (
-                sum(1 for row in rows if row.answered)/len(rows) if rows else 0.0
+                sum(1 for row in rows if row.answered)/len(rows)
+                if rows else 0.0
             ),
-            "ragas": ragas_score,
+            "answerable_accuracy": (
+                sum(
+                    1 
+                    for row in answerable_rows if row.answered
+                    and "not available in the provided documents" not in row.answer.lower()
+                    and "do not contain enough information" not in row.answer.lower()
+                ) / len(answerable_rows)
+                if answerable_rows else 0.0
+            ),
+            "no_answer_accuracy": (
+                sum(
+                    1 
+                    for row in unanswerable_rows
+                    if "not available in the provided documents" in row.answer.lower()
+                    or "do not contain enough information" in row.answer.lower()
+                ) / len(unanswerable_rows)
+                if unanswerable_rows else 0.0
+            ),
+            "by_category": category_summary,
+            "ragas": ragas_score
         }
         
         return summary
@@ -181,7 +219,7 @@ class RagasBenchmarkRunner:
         "question": [row.question for row in rows],
         "answer": [row.answer for row in rows],
         "contexts": [row.retrieved_contexts for row in rows],
-        "reference": [case.reference_answer for case in cases],
+        "reference": [next(case.reference_answer for case in cases if case.id == row.id) for row in rows],
         })
 
         result = evaluate(
@@ -232,11 +270,7 @@ class RagasBenchmarkRunner:
 
 
 
-        return {
-            "faithfulness": float(result_dict.get("faithfulness", 0.0)),
-            "answer_relevancy": float(result_dict.get("answer_relevancy", 0.0)),
-            "context_recall": float(result_dict.get("context_recall", 0.0)),
-        }
+        return ragas_scores
 
 
 
