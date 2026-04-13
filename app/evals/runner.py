@@ -50,7 +50,7 @@ class RagasBenchmarkRunner:
             cases.append(BenchmarkCase(**raw))
         return cases
     
-    async def run(self, top_k: int = 5) -> dict[str, Any]:
+    async def run(self, top_k: int = 3) -> dict[str, Any]:
         cases= self.load_cases()
         rows: list[BenchmarkRunRow] = []
         
@@ -117,22 +117,87 @@ class RagasBenchmarkRunner:
         try:
             from datasets import Dataset
             from ragas import evaluate
-            from ragas.metrices import faithfulness, answer_relevancy, context_recall
-        except ImportError:
-            return None
+            from ragas.metrics import Faithfulness, AnswerRelevancy, ContextRecall
+            from ragas.llms import LangchainLLMWrapper
+            from ragas.embeddings import LangchainEmbeddingsWrapper
+            from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
+            from config.settings import get_settings
+            import os
+            
+            # Set OpenAI API key for RAGAS
+            settings = get_settings()
+            os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+
+            judge_llm = LangchainLLMWrapper(
+                ChatOpenAI(model="gpt-4o-mini", temperature=0)
+            )
+
+            judge_embeddings = LangchainEmbeddingsWrapper(
+                OpenAIEmbeddings(model="text-embedding-3-small")
+            )
+
+            faithfulness_metric = Faithfulness(llm=judge_llm)
+            answer_relevancy_metric = AnswerRelevancy(llm=judge_llm, embeddings=judge_embeddings)
+            context_recall_metric = ContextRecall(llm=judge_llm)
+
+        except Exception as exc:
+            raise RuntimeError(f"Ragas evaluation failed: {exc}") from exc
+
 
         dataset = Dataset.from_dict({
             "question": [case.question for case in cases],
             "answer": [row.answer for row in rows],
             "contexts": [case.reference_contexts for case in cases],
-            "ground_truths": [case.reference_answer for case in cases]
+            "reference": [case.reference_answer for case in cases]
         })
         result = evaluate(
             dataset,
-            metrics= [faithfulness, answer_relevancy, context_recall]
+            metrics=[faithfulness_metric, answer_relevancy_metric, context_recall_metric],
         )
 
+        df = result.to_pandas()
+        print(df.columns.tolist())
+
+
+        print(df[["user_input", "answer_relevancy"]])
+        print(df["answer_relevancy"].isna().sum())
+        print(df["answer_relevancy"].notna().sum())
+
+
+
+
         result_dict = result.to_pandas().mean(numeric_only=True).to_dict()
+
+        import math
+
+        def safe_mean(series) -> float:
+            values = [
+                v for v in series.tolist()
+                if v is not None and not (isinstance(v, float) and math.isnan(v))
+            ]
+            return sum(values) / len(values) if values else 0.0
+
+        def valid_count(series) -> int:
+            return sum(
+                1 for v in series.tolist()
+                if v is not None and not (isinstance(v, float) and math.isnan(v))
+            )
+
+        ragas_scores = {
+            "faithfulness": safe_mean(df["faithfulness"]),
+            "answer_relevancy": safe_mean(df["answer_relevancy"]),
+            "context_recall": safe_mean(df["context_recall"]),
+            "meta": {
+                "faithfulness_valid_rows": valid_count(df["faithfulness"]),
+                "answer_relevancy_valid_rows": valid_count(df["answer_relevancy"]),
+                "context_recall_valid_rows": valid_count(df["context_recall"]),
+            },
+        }
+
+        print(ragas_scores)
+
+
 
         return {
             "faithfulness": float(result_dict.get("faithfulness", 0.0)),

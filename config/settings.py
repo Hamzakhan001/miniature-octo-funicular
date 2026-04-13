@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     pinecone_index_name: str = "rag-prod"
 
 
-    chunk_size: int = 512
+    chunk_size: int = 384
     chunk_overlap: int = 64
     retrieval_top_k: int = 8
     rerank_top_n: int = 3

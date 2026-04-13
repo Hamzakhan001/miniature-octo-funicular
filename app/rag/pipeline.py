@@ -65,7 +65,7 @@ class RAGPipeline:
         top_k: Optional[int] = None,
         filter: Optional[dict] = None,
         run_eval: bool = False,
-        use_hybrid: bool = True,
+        use_hybrid: bool = False,
     ) -> RAGResponse:
         stage_latencies_ms: dict[str, float] = {}
         t0 = time.perf_counter()

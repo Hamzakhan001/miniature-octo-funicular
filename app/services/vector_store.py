@@ -100,7 +100,7 @@ class VectorStoreService:
             query=query,
             docs=docs,
             top_k=top_k or self.settings.top_k,
-            alpha=0.5,
+            alpha=0.0,
         )
 
     async def delete_documents(self, ids: List[str]) -> None:

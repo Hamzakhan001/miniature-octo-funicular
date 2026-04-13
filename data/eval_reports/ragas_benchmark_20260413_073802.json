@@ -1,0 +1,12 @@
+{
+  "total_cases": 20,
+  "avg_latency_ms": 1365.9708543098532,
+  "avg_docs_retrieved": 4.75,
+  "source_hit_rate": 0.35,
+  "answer_rate": 0.95,
+  "ragas": {
+    "faithfulness": 0.7,
+    "answer_relevancy": 0.3654104074147061,
+    "context_recall": 0.8
+  }
+}
