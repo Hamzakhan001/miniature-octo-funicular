@@ -27,9 +27,13 @@ from config.settings import get_settings
 _thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="rag_pipeline")
 
 _RAG_SYSTEM_PROMPT = (
-    "You are a helpful, precise assistant. Answer the user's question using only "
-    "the provided context. If the answer is not in the context, say so clearly.\n\n"
+    "You are a retrieval-augmented assistant. "
+    "Answer the user's question using only the provided context. "
+    "If the context contains enough information, answer clearly and directly. "
+    "If the context does not contain the answer, say that the answer is not available in the provided documents. "
+    "Do not fabricate facts or rely on outside knowledge.\n\n"
     "Context:\n{context}"
+
 )
 
 

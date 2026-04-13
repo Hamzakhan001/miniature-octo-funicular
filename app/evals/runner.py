@@ -82,6 +82,11 @@ class RagasBenchmarkRunner:
                 for source in response.sources
             ]
 
+            print("QUESTION:", case.question)
+            print("ANSWER:", response.answer)
+            print("SOURCES:", sources_names)
+            print("-" * 80)
+
             source_hit = any(src in sources_names for src in case.expected_sources) if case.expected_sources else False
             answered = bool(response.answer and "[BLOCKED]" not in response.answer)
 
