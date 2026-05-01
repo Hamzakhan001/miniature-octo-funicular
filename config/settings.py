@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     redis_url: str = "redis: //localhost:6379/0"
     cache_ttl_seconds: int = 3600
 
+    ingestion_queue_backend: Literal["local"] = "local"
+    ingestion_max_file_size_mb: int = 100
+    ingestion_sync_threshold_bytes: int = 1048576
+    ingestion_queue_db_path: str = "data/ingestion_queue/jobs.db"
+    ingestion_staging_dir: str = "data/ingestion_queue/uploads"
+    ingestion_processed_dir: str = "data/ingestion_queue/processed"
+    ingestion_queue_poll_interval_seconds: float = 1.0
+    ingestion_queue_max_attempts: int = 5
+    ingestion_worker_concurrency: int = 2
+    ingestion_base_retry_seconds: int = 5
+
     app_env: Literal["development", "production", "test"] = "development"
     cors_origins: Any = (
         "http://localhost:3000,"

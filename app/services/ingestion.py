@@ -90,6 +90,34 @@ class IngestionService:
         write_audit_record(audit.model_dump())
         return ids
 
+    async def ingest_staged_file(
+        self,
+        staged_path: str,
+        filename: str,
+        metadata: Optional[dict] = None,
+    ) -> List[str]:
+        t0 = time.perf_counter()
+        chunks = await asyncio.to_thread(
+            self._load_and_chunk_file_sync,
+            staged_path,
+            filename,
+            metadata or {},
+        )
+        logger.info("staged_file_parsed", filename=filename, chunks_before_upsert=len(chunks))
+        ids = await self._batch_upsert(chunks)
+        logger.info("staged_file_ingested", filename=filename, count=len(ids))
+        audit = IngestionAuditRecord(
+            source_name=filename,
+            source_type=Path(filename).suffix.lower().lstrip(".") or "file",
+            status="success",
+            chunks_created=len(chunks),
+            vectors_upserted=len(ids),
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            metadata=metadata or {},
+        )
+        write_audit_record(audit.model_dump())
+        return ids
+
     async def ingest_directory(self, directory: str, metadata: Optional[dict] = None) -> List[str]:
         chunks = await asyncio.to_thread(self._load_directory_sync, directory, metadata or {})
         logger.info("directory_loaded", directory=directory, count=len(chunks))
@@ -181,6 +209,20 @@ class IngestionService:
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+
+    def _load_and_chunk_file_sync(self, staged_path: str, filename: str, metadata: dict) -> List[Document]:
+        reader = SimpleDirectoryReader(input_files=[staged_path], filename_as_id=True)
+        llama_documents = reader.load_data()
+        lc_docs = [
+            Document(
+                page_content=doc.text,
+                metadata={**doc.metadata, "filename": filename, **metadata},
+            )
+            for doc in llama_documents
+            if doc.text.strip()
+        ]
+        logger.info("staged_file_chunked", filename=filename, count=len(lc_docs))
+        return self._splitter.split_documents(lc_docs)
 
     def _load_directory_sync(self, directory: str, metadata: dict) -> List[Document]:
         reader = SimpleDirectoryReader(directory, recursive=True)
