@@ -15,3 +15,5 @@ wheels/
 *.tfstate
 *.tfstate.*
 terraform.tfvars
+lambda.zip
+

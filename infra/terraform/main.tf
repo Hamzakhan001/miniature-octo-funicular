@@ -367,7 +367,7 @@ resource "aws_iam_role_policy_attachment" "lambda_ingestion_attach" {
 resource "aws_lambda_function" "ingestion_router" {
   function_name = "${local.name_prefix}-ingestion-router"
   role          = aws_iam_role.lambda_role.arn
-  handler       = "app.workers.lambda_handler.handler"
+  handler       = "handler.handler"
   runtime       = "python3.13"
   timeout       = 300
   memory_size   = 1024
@@ -379,7 +379,6 @@ resource "aws_lambda_function" "ingestion_router" {
     variables = {
       STORAGE_BACKEND                 = "s3"
       QUEUE_BACKEND                   = "sqs"
-      AWS_REGION                      = var.aws_region
       S3_INGESTION_BUCKET             = aws_s3_bucket.ingestion.bucket
       SQS_INGESTION_QUEUE_URL         = aws_sqs_queue.ingestion.id
       ECS_CLUSTER                     = aws_ecs_cluster.ingestion.name
