@@ -60,5 +60,42 @@ class IngestionResult(BaseModel):
     ids: List[str]
 
 
+class ProcessingTarget(str, Enum):
+    LAMBDA = "lambda"
+    FARGATE = "fargate"
+
+
+class UploadInitRequest(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255)
+    content_type: str = Field(default="application/octet-stream", max_length=255)
+    file_size_bytes: int = Field(..., gt=0, le=100 * 1024 * 1024)
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class UploadInitResponse(BaseModel):
+    job_id: str
+    status: str
+    filename: str
+    object_key: str
+    processing_target: ProcessingTarget
+    upload_url: Optional[str] = None
+    upload_method: Optional[str] = None
+    expires_in_seconds: Optional[int] = None
+
+
+class IngestionJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    filename: str
+    object_key: str
+    processing_target: ProcessingTarget
+    file_size_bytes: int
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
 class DeleteRequest(BaseModel):
     ids: List[str]

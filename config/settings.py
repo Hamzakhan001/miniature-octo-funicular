@@ -35,7 +35,22 @@ class Settings(BaseSettings):
     redis_url: str = "redis: //localhost:6379/0"
     cache_ttl_seconds: int = 3600
 
-    ingestion_queue_backend: Literal["local"] = "local"
+    storage_backend: Literal["local", "s3"] = "local"
+    queue_backend: Literal["memory", "sqs"] = "memory"
+    aws_region: str = "eu-west-2"
+    s3_ingestion_bucket: str = ""
+    s3_presign_expiration_seconds: int = 900
+    sqs_ingestion_queue_url: str = ""
+    ecs_cluster: str = ""
+    ecs_task_definition: str = ""
+    ecs_container_name: str = ""
+    ecs_subnets: Any = ""
+    ecs_security_groups: Any = ""
+    ecs_assign_public_ip: bool = False
+    lambda_max_inline_file_size_mb: int = 12
+    lambda_supported_extensions: Any = ".txt,.md,.html,.json"
+    fargate_preferred_extensions: Any = ".pdf,.docx,.csv"
+
     ingestion_max_file_size_mb: int = 100
     ingestion_sync_threshold_bytes: int = 1048576
     ingestion_queue_db_path: str = "data/ingestion_queue/jobs.db"
@@ -72,7 +87,16 @@ class Settings(BaseSettings):
     golden_set_path: str = "data/golden_set.json"
 
 
-    @field_validator("cors_origins", "blocked_topics", "api_keys", mode="before")
+    @field_validator(
+        "cors_origins",
+        "blocked_topics",
+        "api_keys",
+        "ecs_subnets",
+        "ecs_security_groups",
+        "lambda_supported_extensions",
+        "fargate_preferred_extensions",
+        mode="before",
+    )
     @classmethod
     def parse_str_to_list(cls, v: Any) -> List[str]:
         if v is None:
