@@ -1,0 +1,11 @@
+aws_region = "eu-west-2"
+project_name = "retrieval-process-docs"
+environment = "dev"
+
+vpc_id = "vpc-xxxxxxxxxxxxxxxxx"
+private_subnet_ids = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]
+
+container_image = "337480111522.dkr.ecr.eu-west-2.amazonaws.com/ingestion-worker:latest"
+
+openai_api_key_secret_arn = "arn:aws:secretsmanager:eu-west-2:337480111522:secret:openai-api-key-xxxxx"
+vector_store_api_key_secret_arn = "arn:aws:secretsmanager:eu-west-2:337480111522:secret:pinecone-api-key-xxxxx"
