@@ -9,8 +9,6 @@ from app.services.storage import StorageService
 
 
 class IngestionEventProcessor:
-    """Shared processor used by Lambda and the heavier Fargate path."""
-
     def __init__(
         self,
         *,
@@ -25,12 +23,27 @@ class IngestionEventProcessor:
         self.fargate_dispatcher = fargate_dispatcher
 
     async def process(self, payload: dict[str, Any], *, execution_mode: str = "lambda") -> dict[str, Any]:
+        job_id = payload["job_id"]
+
+        # Create a job record lazily for raw S3 events if it does not already exist.
+        existing = self.job_repository.get_job(job_id)
+        if existing is None:
+            self.job_repository.create_job(
+                job_id=job_id,
+                status="queued",
+                filename=payload["filename"],
+                content_type=payload.get("content_type", "application/octet-stream"),
+                object_key=payload["object_key"],
+                file_size_bytes=payload.get("file_size_bytes", 0),
+                processing_target=payload.get("processing_target", "fargate"),
+                metadata=payload.get("metadata", {}),
+            )
+
         if execution_mode == "fargate":
             return await self._process_file(payload, status="processing_fargate", processing_target="fargate")
 
-        processing_target = payload["processing_target"]
+        processing_target = payload.get("processing_target", "fargate")
         if processing_target == "fargate":
-            job_id = payload["job_id"]
             self.job_repository.update_status(job_id, status="processing_fargate")
             dispatch_result = self.fargate_dispatcher.dispatch(payload)
             return {"status": "dispatched", **dispatch_result}
@@ -46,6 +59,7 @@ class IngestionEventProcessor:
     ) -> dict[str, Any]:
         job_id = payload["job_id"]
         self.job_repository.update_status(job_id, status=status)
+
         file_bytes = self.storage_service.read_object_bytes(payload["object_key"])
         ids = await self.ingestion_service.ingest_file(
             file_bytes=file_bytes,
@@ -57,6 +71,7 @@ class IngestionEventProcessor:
                 "processing_target": processing_target,
             },
         )
+
         result = {
             "status": "ok",
             "filename": payload["filename"],

@@ -7,11 +7,9 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y build-essential curl && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml uv.lock ./
+COPY . /app
 
 RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
-
-COPY . .
 
 ENV PATH="/app/.venv/bin:$PATH"
 

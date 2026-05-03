@@ -10,3 +10,4 @@ ECS_SECURITY_GROUPS = [s.strip() for s in os.environ.get("ECS_SECURITY_GROUPS", 
 ECS_ASSIGN_PUBLIC_IP = os.environ.get("ECS_ASSIGN_PUBLIC_IP", "false").lower() == "true"
 
 LAMBDA_MAX_INLINE_FILE_SIZE_MB = int(os.environ.get("LAMBDA_MAX_INLINE_FILE_SIZE_MB", "12"))
+

@@ -42,7 +42,7 @@ class IngestionOrchestrator:
         metadata: Optional[dict[str, Any]] = None,
     ) -> IngestionJobRecord:
         self._validate_file(filename=filename, file_size_bytes=file_size_bytes)
-        job_id = f"job_{uuid.uuid4().hex}"
+        job_id4 = f"job_{uuid.uuid4().hex}"
         target, reason = self.processing_router.pick_target(
             filename=filename,
             file_size_bytes=file_size_bytes,

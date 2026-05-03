@@ -64,7 +64,6 @@ class ProcessingTarget(str, Enum):
     LAMBDA = "lambda"
     FARGATE = "fargate"
 
-
 class UploadInitRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
     content_type: str = Field(default="application/octet-stream", max_length=255)
@@ -82,7 +81,7 @@ class UploadInitResponse(BaseModel):
     upload_method: Optional[str] = None
     expires_in_seconds: Optional[int] = None
 
-
+    
 class IngestionJobStatusResponse(BaseModel):
     job_id: str
     status: str

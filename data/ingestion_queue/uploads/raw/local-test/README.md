@@ -23,8 +23,6 @@ High-level flow:
 7. Metrics, traces, and audit records are captured
 8. Offline evaluation is run with Ragas on a benchmark dataset
 
-For the AWS event-driven document ingestion architecture, see [docs/document-ingestion-architecture.md](/Users/hamza/Desktop/PROJECTS/retrieval-process-docs/docs/document-ingestion-architecture.md).
-
 Core stack:
 - FastAPI
 - OpenAI

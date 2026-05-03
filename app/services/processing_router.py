@@ -13,6 +13,7 @@ class ProcessingRouter:
         self._lambda_supported_extensions = {
             ext.lower() for ext in self.settings.lambda_supported_extensions
         }
+
         self._fargate_preferred_extensions = {
             ext.lower() for ext in self.settings.fargate_preferred_extensions
         }
