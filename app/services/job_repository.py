@@ -174,3 +174,115 @@ class SQLiteJobRepository:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
+
+
+class DynamoDBJobRepository:
+    def __init__(self) -> None:
+        settings = get_settings()
+        self._table_name = settings.job_status_table_name
+        if not self._table_name:
+            raise ValueError("job_status_table_name is required for DynamoDBJobRepository")
+
+        import boto3
+
+        self._table = boto3.resource("dynamodb", region_name=settings.aws_region).Table(
+            self._table_name
+        )
+
+    def create_job(
+        self,
+        *,
+        job_id: str,
+        status: str,
+        filename: str,
+        content_type: str,
+        object_key: str,
+        file_size_bytes: int,
+        processing_target: str,
+        upload_url: Optional[str] = None,
+        upload_method: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> IngestionJobRecord:
+        now = utc_now()
+        item = {
+            "job_id": job_id,
+            "status": status,
+            "filename": filename,
+            "content_type": content_type,
+            "object_key": object_key,
+            "file_size_bytes": file_size_bytes,
+            "processing_target": processing_target,
+            "upload_url": upload_url,
+            "upload_method": upload_method,
+            "metadata": metadata or {},
+            "error": None,
+            "result": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        self._table.put_item(Item=item)
+        return self.get_job(job_id)
+
+    def get_job(self, job_id: str) -> Optional[IngestionJobRecord]:
+        response = self._table.get_item(Key={"job_id": job_id})
+        item = response.get("Item")
+        if not item:
+            return None
+        return IngestionJobRecord(
+            job_id=item["job_id"],
+            status=item["status"],
+            filename=item["filename"],
+            content_type=item["content_type"],
+            object_key=item["object_key"],
+            file_size_bytes=int(item["file_size_bytes"]),
+            processing_target=item["processing_target"],
+            upload_url=item.get("upload_url"),
+            upload_method=item.get("upload_method"),
+            metadata=item.get("metadata", {}),
+            error=item.get("error"),
+            result=item.get("result"),
+            created_at=item["created_at"],
+            updated_at=item["updated_at"],
+        )
+
+    def update_status(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        error: Optional[str] = None,
+        result: Optional[dict[str, Any]] = None,
+        upload_url: Optional[str] = None,
+        upload_method: Optional[str] = None,
+    ) -> IngestionJobRecord:
+        existing = self.get_job(job_id)
+        if existing is None:
+            raise KeyError(f"Unknown ingestion job: {job_id}")
+
+        next_upload_url = upload_url if upload_url is not None else existing.upload_url
+        next_upload_method = upload_method if upload_method is not None else existing.upload_method
+
+        self._table.update_item(
+            Key={"job_id": job_id},
+            UpdateExpression=(
+                "SET #status = :status, #error = :error, #result = :result, "
+                "#upload_url = :upload_url, #upload_method = :upload_method, #updated_at = :updated_at"
+            ),
+            ExpressionAttributeNames={
+                "#status": "status",
+                "#error": "error",
+                "#result": "result",
+                "#upload_url": "upload_url",
+                "#upload_method": "upload_method",
+                "#updated_at": "updated_at",
+            },
+            ExpressionAttributeValues={
+                ":status": status,
+                ":error": error,
+                ":result": result,
+                ":upload_url": next_upload_url,
+                ":upload_method": next_upload_method,
+                ":updated_at": utc_now(),
+            },
+        )
+        return self.get_job(job_id)

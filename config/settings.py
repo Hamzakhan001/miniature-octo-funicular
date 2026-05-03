@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     embedding_dimension: int = 1536
     chat_temperature: float = 0.0
     max_tokens: int = 1024
+    job_status_backend: Literal["sqlite", "dynamodb"] = "sqlite"
+    job_status_table_name: str = ""
+    openai_api_key_secret_arn: str = ""
+    vector_store_api_key_secret_arn: str = ""
+
 
 
     pinecone_api_key: str = Field(..., alias="PINECONE_API_KEY")

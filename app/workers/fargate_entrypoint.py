@@ -16,7 +16,7 @@ def main() -> None:
 
     payload = json.loads(raw_payload)
     processor = get_ingestion_event_processor()
-    asyncio.run(processor.process({**payload, "processing_target": "lambda"}))
+    asyncio.run(processor.process(payload, execution_mode="fargate"))
     logger.info("fargate_ingestion_completed", job_id=payload.get("job_id"))
 
 

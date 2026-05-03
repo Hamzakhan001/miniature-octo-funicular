@@ -12,6 +12,7 @@ from langchain_pinecone import PineconeVectorStore
 from openai import AsyncOpenAI
 from pinecone import Pinecone, ServerlessSpec
 
+from app.core.secrets import get_secret_value
 from app.core.config import get_settings
 from app.core.logging import logger
 
@@ -21,14 +22,24 @@ _thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pinecone")
 class VectorStoreService:
     def __init__(self):
         self.settings = get_settings()
-        self._pc = Pinecone(api_key=self.settings.pinecone_api_key)
-        self._async_openai = AsyncOpenAI(api_key=self.settings.openai_api_key)
+
+        openai_api_key = self.settings.openai_api_key
+        if not openai_api_key and self.settings.openai_api_key_secret_arn:
+            openai_api_key = get_secret_value(self.settings.openai_api_key_secret_arn)
+
+        pinecone_api_key = self.settings.pinecone_api_key
+        if not pinecone_api_key and self.settings.vector_store_api_key_secret_arn:
+            pinecone_api_key = get_secret_value(self.settings.vector_store_api_key_secret_arn)
+
+        self._pc = Pinecone(api_key=pinecone_api_key)
+        self._async_openai = AsyncOpenAI(api_key=openai_api_key)
         self._embeddings = OpenAIEmbeddings(
             model=self.settings.openai_embedding_model,
-            openai_api_key=self.settings.openai_api_key,
+            openai_api_key=openai_api_key,
         )
         self._store: Optional[PineconeVectorStore] = None
         self._ensure_index()
+
 
     def _ensure_index(self) -> None:
         existing_names = [idx.name for idx in self._pc.list_indexes()]

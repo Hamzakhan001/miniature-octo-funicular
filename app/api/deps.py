@@ -5,7 +5,7 @@ from app.services.fargate_dispatcher import ECSFargateDispatcher, NoopFargateDis
 from app.services.ingestion_orchestrator import IngestionOrchestrator
 from app.services.vector_store import VectorStoreService
 from app.services.ingestion import IngestionService
-from app.services.job_repository import SQLiteJobRepository
+from app.services.job_repository import SQLiteJobRepository, DynamoDBJobRepository
 from app.services.processing_router import ProcessingRouter
 from app.services.queue_backend import MemoryQueuePublisher, SQSQueuePublisher
 from app.services.rag_chain import RAGService
@@ -21,8 +21,12 @@ def get_ingestion_service() -> IngestionService:
     return IngestionService(vector_store = get_vector_store())
 
 @lru_cache
-def get_job_repository() -> SQLiteJobRepository:
+def get_job_repository():
+    settings = get_settings()
+    if settings.job_status_backend == "dynamodb":
+        return DynamoDBJobRepository()
     return SQLiteJobRepository()
+
 
 @lru_cache
 def get_processing_router() -> ProcessingRouter:

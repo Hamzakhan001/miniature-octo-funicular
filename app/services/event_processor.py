@@ -17,7 +17,7 @@ class IngestionEventProcessor:
         *,
         storage_service: StorageService,
         ingestion_service: IngestionService,
-        job_repository: SQLiteJobRepository,
+        job_repository,
         fargate_dispatcher: FargateDispatcher,
     ) -> None:
         self.storage_service = storage_service
@@ -25,16 +25,28 @@ class IngestionEventProcessor:
         self.job_repository = job_repository
         self.fargate_dispatcher = fargate_dispatcher
 
-    async def process(self, payload: dict[str, Any]) -> dict[str, Any]:
-        job_id = payload["job_id"]
-        processing_target = payload["processing_target"]
+    async def process(self, payload: dict[str, Any], *, execution_mode: str = "lambda") -> dict[str, Any]:
+        if execution_mode == "fargate":
+            return await self._process_file(payload, status="processing_fargate", processing_target="fargate")
 
+        processing_target = payload["processing_target"]
         if processing_target == "fargate":
+            job_id = payload["job_id"]
             self.job_repository.update_status(job_id, status="processing_fargate")
             dispatch_result = self.fargate_dispatcher.dispatch(payload)
             return {"status": "dispatched", **dispatch_result}
 
-        self.job_repository.update_status(job_id, status="processing_lambda")
+        return await self._process_file(payload, status="processing_lambda", processing_target="lambda")
+
+    async def _process_file(
+        self,
+        payload: dict[str, Any],
+        *,
+        status: str,
+        processing_target: str,
+    ) -> dict[str, Any]:
+        job_id = payload["job_id"]
+        self.job_repository.update_status(job_id, status=status)
         file_bytes = self.storage_service.read_object_bytes(payload["object_key"])
         ids = await self.ingestion_service.ingest_file(
             file_bytes=file_bytes,
@@ -43,7 +55,7 @@ class IngestionEventProcessor:
                 **payload.get("metadata", {}),
                 "job_id": job_id,
                 "object_key": payload["object_key"],
-                "processing_target": "lambda",
+                "processing_target": processing_target,
             },
         )
         result = {
@@ -53,5 +65,5 @@ class IngestionEventProcessor:
             "ids": ids,
         }
         self.job_repository.update_status(job_id, status="completed", result=result)
-        logger.info("lambda_ingestion_completed", job_id=job_id, chunks=len(ids))
+        logger.info("ingestion_completed", job_id=job_id, chunks=len(ids), execution_mode=processing_target)
         return result
