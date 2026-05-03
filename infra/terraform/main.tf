@@ -243,25 +243,36 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:GetObjectAttributes",
-          "s3:HeadObject"
+        {
+            Effect = "Allow"
+            Action = [
+            "s3:GetObject",
+            "s3:GetObjectAttributes",
+            "s3:HeadObject"
+            ]
+            Resource = "${aws_s3_bucket.ingestion.arn}/*"
+        },
+        {
+            Effect = "Allow"
+            Action = [
+            "secretsmanager:GetSecretValue"
+            ]
+            Resource = [
+            var.openai_api_key_secret_arn,
+            var.vector_store_api_key_secret_arn
+            ]
+        },
+        {
+            Effect = "Allow"
+            Action = [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:UpdateItem"
+            ]
+            Resource = aws_dynamodb_table.job_status.arn
+        }
         ]
-        Resource = "${aws_s3_bucket.ingestion.arn}/*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem"
-        ]
-        Resource = aws_dynamodb_table.job_status.arn
-      }
-    ]
+
   })
 }
 
@@ -284,7 +295,10 @@ resource "aws_ecs_task_definition" "ingestion_worker" {
         { name = "STORAGE_BACKEND", value = "s3" },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "S3_INGESTION_BUCKET", value = aws_s3_bucket.ingestion.bucket },
-        { name = "JOB_STATUS_TABLE_NAME", value = aws_dynamodb_table.job_status.name }
+        { name = "JOB_STATUS_BACKEND", value = "dynamodb" },
+        { name = "JOB_STATUS_TABLE_NAME", value = aws_dynamodb_table.job_status.name },
+        { name = "OPENAI_API_KEY_SECRET_ARN", value = var.openai_api_key_secret_arn },
+        { name = "VECTOR_STORE_API_KEY_SECRET_ARN", value = var.vector_store_api_key_secret_arn }
       ]
       logConfiguration = {
         logDriver = "awslogs"
