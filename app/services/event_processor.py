@@ -5,7 +5,6 @@ from typing import Any
 from app.core.logging import logger
 from app.services.fargate_dispatcher import FargateDispatcher
 from app.services.ingestion import IngestionService
-from app.services.job_repository import SQLiteJobRepository
 from app.services.storage import StorageService
 
 

@@ -30,7 +30,7 @@ class VectorStoreService:
         pinecone_api_key = self.settings.pinecone_api_key
         if not pinecone_api_key and self.settings.vector_store_api_key_secret_arn:
             pinecone_api_key = get_secret_value(self.settings.vector_store_api_key_secret_arn)
-
+        self._pinecone_api_key = pinecone_api_key
         self._pc = Pinecone(api_key=pinecone_api_key)
         self._async_openai = AsyncOpenAI(api_key=openai_api_key)
         self._embeddings = OpenAIEmbeddings(
@@ -66,7 +66,7 @@ class VectorStoreService:
         self._store = PineconeVectorStore(
             index_name=self.settings.pinecone_index_name,
             embedding=self._embeddings,
-            pinecone_api_key=self.settings.pinecone_api_key,
+            pinecone_api_key=self._pinecone_api_key,
         )
         logger.info("vector_store_initialized", index=self.settings.pinecone_index_name)
 
