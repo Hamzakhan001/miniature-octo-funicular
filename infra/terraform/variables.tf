@@ -1,6 +1,6 @@
 variable "aws_region" {
     type = string
-    default = "retrieval-process-docs"
+    default = "eu-west-2"
 }
 
 variable "project_name" {

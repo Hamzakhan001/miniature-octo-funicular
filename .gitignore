@@ -10,4 +10,8 @@ wheels/
 .venv
 
 .env
-.env
+
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
