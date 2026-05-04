@@ -262,22 +262,6 @@ Terraform is used to provision the infrastructure.
 
 ---
 
-## Why This Project Is Useful For Interviews
-
-This repo demonstrates real GenAI engineering themes that commonly show up in interviews:
-
-- full RAG architecture
-- queue-based asynchronous ingestion
-- Lambda vs Fargate tradeoffs
-- event-driven cloud design
-- retries and DLQ thinking
-- secure secret management
-- private subnet networking
-- vector indexing pipeline design
-- evaluation and observability
-
----
-
 ## Project Status
 
 Currently validated:
@@ -313,8 +297,3 @@ Current ingestion architecture docs:
 - Prometheus
 - Grafana
 
----
-
-## Short LinkedIn Summary
-
-Built a production-style RAG system with an event-driven document ingestion pipeline on AWS using S3, SQS, Lambda, Fargate, DynamoDB, Secrets Manager, ECR, OpenAI, and Pinecone. The system ingests uploaded documents asynchronously, processes them in containerized workers, generates embeddings, and stores vectors in Pinecone while preserving secure secret management, private-subnet networking, and production-minded observability.
