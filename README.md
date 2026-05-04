@@ -1,206 +1,320 @@
-## Overview
+# Retrieval Process Docs
 
-This project is a production-oriented Retrieval-Augmented Generation (RAG) application built with FastAPI, Pinecone, OpenAI, and Ragas.
+> Production-oriented RAG system with an event-driven document ingestion pipeline on AWS.
 
-It supports:
-- document ingestion
-- semantic / hybrid retrieval
-- grounded answer generation
-- offline benchmark evaluation
-- observability with Prometheus and Grafana
-- live deployment on AWS EC2 behind Nginx
+This project combines:
 
-## Architecture
+- a **RAG application** for grounded retrieval and answer generation
+- a **queue-driven ingestion pipeline** for asynchronous document processing
+- **AWS event-driven infrastructure** using S3, SQS, Lambda, Fargate, DynamoDB, Secrets Manager, and ECR
+- **observability and evaluation** for production-minded GenAI engineering
 
-High-level flow:
+## What This Project Is
 
-1. Documents are ingested and chunked
-2. Chunks are embedded with OpenAI embeddings
-3. Embeddings are stored in Pinecone
-4. User queries go through the RAG pipeline
-5. Retrieval returns top-k supporting chunks
-6. The generator answers using retrieved context only
-7. Metrics, traces, and audit records are captured
-8. Offline evaluation is run with Ragas on a benchmark dataset
+At a high level, this repo demonstrates how to move from a simple RAG demo to a more production-shaped architecture:
 
-For the AWS event-driven document ingestion architecture, see [docs/document-ingestion-architecture.md](/Users/hamza/Desktop/PROJECTS/retrieval-process-docs/docs/document-ingestion-architecture.md).
+- documents are uploaded and stored durably
+- ingestion is decoupled from user-facing traffic
+- processing is routed asynchronously
+- heavier document work runs in containerized workers
+- embeddings are generated and stored in Pinecone
+- retrieval and generation are evaluated and observable
 
-Core stack:
-- FastAPI
-- OpenAI
-- Pinecone
-- Ragas
-- Prometheus
-- Grafana
-- AWS EC2
-- Nginx
+This is the current cloud ingestion path:
 
-## Evaluation
+`S3 -> SQS -> Lambda -> Fargate -> OpenAI Embeddings -> Pinecone`
 
-This project uses both retrieval and generation evaluation.
+---
 
-### Retrieval metrics
-- `hit_rate_at_k`
-- `context_recall`
-- `avg_docs_retrieved`
-- `no_answer_accuracy`
+## RAG Architecture
 
-### Generation metrics
-- `faithfulness`
-- `answer_relevancy`
-- `answerable_accuracy`
+The RAG side of the project follows this flow:
 
-### Current offline benchmark baseline
-- Faithfulness: `0.78`
-- Answer Relevancy: `0.62`
-- Context Recall: `0.75`
+```mermaid
+flowchart LR
+    A["User Query"] --> B["FastAPI Query API"]
+    B --> C["Guardrails and Request Validation"]
+    C --> D["Retriever"]
+    D --> E["Pinecone Vector Search"]
+    E --> F["Hybrid / Reranked Context"]
+    F --> G["Prompt Assembly"]
+    G --> H["OpenAI Chat Model"]
+    H --> I["Grounded Answer"]
+    I --> J["Evaluation and Audit Logs"]
+```
 
-Benchmark evaluation is run offline using a fixed benchmark dataset and Ragas.
+### RAG flow in plain English
+
+1. A user submits a question.
+2. The query is validated and optionally guarded.
+3. Relevant chunks are retrieved from Pinecone.
+4. Retrieval output is reranked or filtered into final context.
+5. The answer is generated using retrieved evidence only.
+6. The system captures logs, audits, and optional evaluation signals.
+
+### Core RAG building blocks in this repo
+
+- **Chunking**: recursive chunking with overlap
+- **Embeddings**: OpenAI embeddings
+- **Vector store**: Pinecone
+- **Retrieval**: semantic retrieval with optional hybrid/rerank logic
+- **Generation**: OpenAI chat model
+- **Observability**: metrics, audit logs, tracing hooks
+- **Evaluation**: Ragas-based offline evaluation
+
+### Why this RAG design matters
+
+This project is not just “LLM + prompt”.
+It shows the full engineering shape around retrieval:
+
+- document preprocessing
+- vector indexing
+- grounded context assembly
+- evaluation separation between retrieval quality and generation quality
+- production observability
+
+---
+
+## Queue-Based Ingestion Architecture
+
+The ingestion pipeline is event-driven and designed to handle asynchronous document processing without blocking the application.
+
+```mermaid
+flowchart LR
+    A["Frontend or API Client"] --> B["FastAPI Upload Control Plane"]
+    B --> C["Amazon S3 Raw Document Bucket"]
+    C --> D["S3 ObjectCreated Event"]
+    D --> E["Amazon SQS Ingestion Queue"]
+    E --> F["AWS Lambda Dispatcher"]
+    F --> G["Payload Enrichment and Routing"]
+    G --> H["Amazon ECS Fargate Worker"]
+    H --> I["Document Parsing and Chunking"]
+    I --> J["OpenAI Embeddings API"]
+    J --> K["Pinecone Vector Database"]
+    H --> L["DynamoDB Job Status Table"]
+    H --> M["CloudWatch Logs and Audit Trail"]
+
+    E --> N["Dead Letter Queue"]
+```
+
+### Queue ingestion flow
+
+1. A document is uploaded through the API flow or stored in S3.
+2. S3 emits an `ObjectCreated` event.
+3. SQS receives the event and acts as the ingestion buffer.
+4. Lambda consumes the message and normalizes the payload.
+5. Lambda dispatches a one-off Fargate task for heavier document ingestion.
+6. The Fargate worker:
+   - downloads the file
+   - parses it
+   - chunks it
+   - generates embeddings
+   - writes vectors to Pinecone
+   - updates job status
+
+### Why the queue matters
+
+SQS is used to:
+
+- absorb burst uploads
+- decouple upload throughput from processing throughput
+- support retries
+- isolate failures through a DLQ
+- protect the API from long-running document work
+
+### Why Lambda and Fargate are both used
+
+**Lambda**
+- event-driven dispatcher
+- lightweight orchestration
+- no always-on poller to manage
+
+**Fargate**
+- runs heavier ingestion work
+- better for larger dependencies and longer-running processing
+- avoids EC2 management
+
+### Job tracking
+
+Cloud execution uses DynamoDB for shared ingestion state:
+
+- queued
+- processing
+- completed
+- failed
+
+This makes the ingestion flow observable outside any single container or process.
+
+---
+
+## Does The Queue / Fargate Processor Handle OCR Or Text Ingestion?
+
+### Text ingestion
+
+Yes, the ingestion path handles **text-based document ingestion** now.
+
+Current supported formats in the ingestion service include:
+
+- `.pdf`
+- `.txt`
+- `.md`
+- `.docx`
+- `.html`
+- `.csv`
+- `.json` at the control-plane level
+
+The worker parses supported documents, extracts text, chunks it, and pushes vectors into Pinecone.
+
+### OCR
+
+Not as a dedicated OCR pipeline yet.
+
+Right now the project relies on document readers/parsers for text extraction, but it does **not yet include a specialized OCR stage** such as:
+
+- Amazon Textract
+- Tesseract
+- image-to-text fallback pipeline
+
+So the answer is:
+
+- **text ingestion**: yes
+- **full OCR pipeline for scanned/image-only documents**: not yet
+
+### How OCR would fit later
+
+The existing queue/Fargate design is a good base for OCR extension.
+A future OCR path would likely be:
+
+`S3 -> SQS -> Lambda -> Fargate or Textract -> Chunking -> Embeddings -> Pinecone`
+
+---
+
+## Security Design
+
+This project uses production-oriented security patterns:
+
+- raw API keys are stored in **AWS Secrets Manager**
+- Lambda and ECS use **least-privilege IAM roles**
+- document bytes stay in **S3**, not in queue messages
+- Fargate runs in **private subnets**
+- outbound connectivity is provided via **NAT**
+- queue messages carry metadata, not file contents
+
+---
 
 ## Observability
 
-The app exposes operational monitoring through:
-- Prometheus metrics
-- Grafana dashboards
-- structured audit records
-- per-stage latency tracking
+The system captures several operational signals:
 
-Examples of tracked signals:
-- query count
-- retrieval latency
-- generation latency
-- docs retrieved
-- answer length
-- evaluation scores
+- CloudWatch logs for Lambda and Fargate
+- audit records written by the application
+- retrieval and ingestion logs
+- Prometheus / Grafana support for app-side observability
 
-## Deployment
+Example tracked signals:
 
-The application is deployed on AWS EC2 and proxied through Nginx.
+- file parsed
+- chunk count
+- embedding requests
+- vectors upserted
+- ingestion completion
+- query latency
+- evaluation metrics
 
-Deployment setup:
-- FastAPI app running with Uvicorn
-- systemd service for process management
-- Nginx reverse proxy on port 80
-- Pinecone and OpenAI configured through environment variables
-
-## Why this project matters
-
-This project was built to explore what a more production-minded GenAI application looks like beyond a simple demo.
-
-It includes:
-- measurable offline evaluation
-- retrieval vs generation quality separation
-- observability and benchmarking
-- deployment to live infrastructure
-- source-grounded answers for user trust
-
-## Next Improvements
-
-Planned next steps:
-- benchmark threshold gating in CI
-- domain + HTTPS
-- user feedback collection
-- improved source snippet presentation
-
-
-## Overview
-
-This project is a production-oriented Retrieval-Augmented Generation (RAG) application built with FastAPI, Pinecone, OpenAI, and Ragas.
-
-It supports:
-- document ingestion
-- semantic / hybrid retrieval
-- grounded answer generation
-- offline benchmark evaluation
-- observability with Prometheus and Grafana
-- live deployment on AWS EC2 behind Nginx
-
-## Architecture
-
-High-level flow:
-
-1. Documents are ingested and chunked
-2. Chunks are embedded with OpenAI embeddings
-3. Embeddings are stored in Pinecone
-4. User queries go through the RAG pipeline
-5. Retrieval returns top-k supporting chunks
-6. The generator answers using retrieved context only
-7. Metrics, traces, and audit records are captured
-8. Offline evaluation is run with Ragas on a benchmark dataset
-
-Core stack:
-- FastAPI
-- OpenAI
-- Pinecone
-- Ragas
-- Prometheus
-- Grafana
-- AWS EC2
-- Nginx
+---
 
 ## Evaluation
 
-This project uses both retrieval and generation evaluation.
+This project includes offline evaluation for the RAG side using Ragas.
 
-### Retrieval metrics
-- `hit_rate_at_k`
-- `context_recall`
-- `avg_docs_retrieved`
-- `no_answer_accuracy`
+Current tracked themes include:
 
-### Generation metrics
-- `faithfulness`
-- `answer_relevancy`
-- `answerable_accuracy`
+- faithfulness
+- answer relevancy
+- retrieval quality
+- context usefulness
 
-### Current offline benchmark baseline
-- Faithfulness: `0.78`
-- Answer Relevancy: `0.62`
-- Context Recall: `0.75`
+This helps separate:
 
-Benchmark evaluation is run offline using a fixed benchmark dataset and Ragas.
+- retrieval problems
+- generation problems
 
-## Observability
+instead of treating RAG as a black box.
 
-The app exposes operational monitoring through:
-- Prometheus metrics
-- Grafana dashboards
-- structured audit records
-- per-stage latency tracking
+---
 
-Examples of tracked signals:
-- query count
-- retrieval latency
-- generation latency
-- docs retrieved
-- answer length
-- evaluation scores
+## AWS Infrastructure Used
 
-## Deployment
+Provisioned components include:
 
-The application is deployed on AWS EC2 and proxied through Nginx.
+- Amazon S3
+- Amazon SQS
+- SQS Dead Letter Queue
+- AWS Lambda
+- Amazon ECS Fargate
+- Amazon DynamoDB
+- AWS Secrets Manager
+- Amazon ECR
+- CloudWatch Logs
+- NAT Gateway and private subnet routing
 
-Deployment setup:
-- FastAPI app running with Uvicorn
-- systemd service for process management
-- Nginx reverse proxy on port 80
-- Pinecone and OpenAI configured through environment variables
+Terraform is used to provision the infrastructure.
 
-## Why this project matters
+---
 
-This project was built to explore what a more production-minded GenAI application looks like beyond a simple demo.
+## Why This Project Is Useful For Interviews
 
-It includes:
-- measurable offline evaluation
-- retrieval vs generation quality separation
-- observability and benchmarking
-- deployment to live infrastructure
-- source-grounded answers for user trust
+This repo demonstrates real GenAI engineering themes that commonly show up in interviews:
 
-## Next Improvements
+- full RAG architecture
+- queue-based asynchronous ingestion
+- Lambda vs Fargate tradeoffs
+- event-driven cloud design
+- retries and DLQ thinking
+- secure secret management
+- private subnet networking
+- vector indexing pipeline design
+- evaluation and observability
 
-Planned next steps:
-- benchmark threshold gating in CI
-- domain + HTTPS
-- user feedback collection
-- improved source snippet presentation
+---
+
+## Project Status
+
+Currently validated:
+
+- local ingestion pipeline
+- cloud event flow from S3 to SQS to Lambda to Fargate
+- Fargate-based document processing
+- OpenAI embedding calls
+- Pinecone vector upserts
+
+Current ingestion architecture docs:
+
+- [docs/document-ingestion-architecture.md](/Users/hamza/Desktop/PROJECTS/retrieval-process-docs/docs/document-ingestion-architecture.md)
+- [docs/event-driven-ingestion.md](/Users/hamza/Desktop/PROJECTS/retrieval-process-docs/docs/event-driven-ingestion.md)
+
+---
+
+## Core Stack
+
+- FastAPI
+- OpenAI
+- Pinecone
+- LangChain
+- LlamaIndex
+- Ragas
+- AWS S3
+- AWS SQS
+- AWS Lambda
+- AWS ECS Fargate
+- DynamoDB
+- Secrets Manager
+- Terraform
+- Prometheus
+- Grafana
+
+---
+
+## Short LinkedIn Summary
+
+Built a production-style RAG system with an event-driven document ingestion pipeline on AWS using S3, SQS, Lambda, Fargate, DynamoDB, Secrets Manager, ECR, OpenAI, and Pinecone. The system ingests uploaded documents asynchronously, processes them in containerized workers, generates embeddings, and stores vectors in Pinecone while preserving secure secret management, private-subnet networking, and production-minded observability.
