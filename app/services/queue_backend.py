@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import logger
+from app.services.local_ingestion_runner import run_payload_in_background
 
 
 class QueuePublisher:
@@ -15,8 +16,18 @@ class QueuePublisher:
 class MemoryQueuePublisher(QueuePublisher):
     """Development fallback that records the event in logs without pretending to scale."""
 
+    def __init__(self) -> None:
+        self._settings = get_settings()
+
     def publish(self, payload: dict[str, Any]) -> dict[str, Any]:
         logger.info("ingestion_event_recorded_locally", payload=payload)
+        if self._settings.auto_process_local_ingestion:
+            run_payload_in_background(payload=payload, execution_mode="lambda")
+            return {
+                "backend": "memory",
+                "accepted": True,
+                "auto_processed": True,
+            }
         return {"backend": "memory", "accepted": True}
 
 
@@ -46,6 +57,5 @@ class SQSQueuePublisher(QueuePublisher):
             processing_target=payload.get("processing_target"),
         )
         return {"backend": "sqs", "message_id": response.get("MessageId"), "accepted": True}
-
 
 

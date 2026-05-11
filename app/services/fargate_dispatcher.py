@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import logger
+from app.services.local_ingestion_runner import run_payload_in_background
 
 
 class FargateDispatcher:
@@ -13,7 +14,14 @@ class FargateDispatcher:
 
 
 class NoopFargateDispatcher(FargateDispatcher):
+    def __init__(self) -> None:
+        self._settings = get_settings()
+
     def dispatch(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._settings.auto_process_local_ingestion:
+            run_payload_in_background(payload=payload, execution_mode="fargate")
+            logger.info("fargate_dispatch_local_background_started", job_id=payload.get("job_id"))
+            return {"backend": "local-background", "accepted": True}
         logger.info("fargate_dispatch_skipped", payload=payload)
         return {"backend": "noop", "accepted": True}
 

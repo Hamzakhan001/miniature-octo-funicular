@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     storage_backend: Literal["local", "s3"] = "local"
     queue_backend: Literal["memory", "sqs"] = "memory"
+    auto_process_local_ingestion: bool = False
     aws_region: str = "eu-west-2"
     s3_ingestion_bucket: str = ""
     s3_presign_expiration_seconds: int = 900
