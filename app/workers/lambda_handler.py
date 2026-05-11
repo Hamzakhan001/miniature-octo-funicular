@@ -25,12 +25,18 @@ def _extract_payloads(record: dict[str, Any]) -> list[dict[str, Any]]:
         if not key:
             continue
 
-        filename = key.split("/")[-1]
+        parts = key.split("/")
+        if len(parts) < 3:
+            logger.warning("invalid_s3_object_key", key=key)
+            continue
+
+        job_id = parts[1]
+        filename = parts[-1]
         size = obj.get("size", 0)
 
         payloads.append(
             {
-                "job_id": f"s3::{bucket.get('name','unknown')}::{key}",
+                "job_id": job_id,
                 "filename": filename,
                 "object_key": key,
                 "file_size_bytes": size,

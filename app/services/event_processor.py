@@ -38,6 +38,9 @@ class IngestionEventProcessor:
                 processing_target=payload.get("processing_target", "fargate"),
                 metadata=payload.get("metadata", {}),
             )
+        elif existing.status == "pending_upload":
+            self.job_repository.update_status(job_id, status="queued")
+
 
         if execution_mode == "fargate":
             return await self._process_file(payload, status="processing_fargate", processing_target="fargate")
