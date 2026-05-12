@@ -125,33 +125,50 @@ class IngestionService:
         logger.info("directory_ingested", directory=directory, count=len(ids))
         return ids
 
-    async def _batch_upsert(self, chunks: List[Document], batch_size: int = 100) -> List[str]:
+    async def _batch_upsert(self, chunks: List[Document], batch_size: int = 50) -> List[str]:
         if not chunks:
             return []
 
         batches = [chunks[i : i + batch_size] for i in range(0, len(chunks), batch_size)]
         logger.info("batch_upsert_start", total_batches=len(batches))
 
-        async def process_batch(batch_num: int, batch: List[Document]) -> List[str]:
-            async with self._embedding_semaphore:
-                try:
-                    ids = await self._upsert_batch_with_retry(batch, batch_num)
-                    logger.info("batch_upsert_completed", batch_num=batch_num, count=len(ids))
-                    return ids
-                except Exception as exc:
-                    logger.error("batch_upsert_error", batch_num=batch_num, error=str(exc))
-                    raise
+        queue: asyncio.Queue[tuple[int, List[Document]] | None] = asyncio.Queue()
+        for batch_num, batch in enumerate(batches, 1):
+            await queue.put((batch_num, batch))
 
-        tasks = [
-            asyncio.create_task(process_batch(batch_num, batch))
-            for batch_num, batch in enumerate(batches, 1)
-        ]
-
-        results = await asyncio.gather(*tasks)
+        worker_count = 4
+        for _ in range(worker_count):
+            await queue.put(None)
 
         all_ids: List[str] = []
-        for ids in results:
-            all_ids.extend(ids)
+        all_ids_lock = asyncio.Lock()
+
+        async def worker() -> None:
+            while True:
+                item = await queue.get()
+                try:
+                    if item is None:
+                        return
+
+                    batch_num, batch = item
+                    try:
+                        async with self._embedding_semaphore:
+                            ids = await self._upsert_batch_with_retry(batch, batch_num)
+                        async with all_ids_lock:
+                            all_ids.extend(ids)
+                        logger.info("batch_upsert_completed", batch_num=batch_num, count=len(ids))
+                    except Exception as exc:
+                        logger.error("batch_upsert_error", batch_num=batch_num, error=str(exc))
+                        raise
+                finally:
+                    queue.task_done()
+
+        workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+
+        await queue.join()
+
+        for task in workers:
+            await task
 
         return all_ids
 
