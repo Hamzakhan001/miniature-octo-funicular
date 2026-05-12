@@ -28,7 +28,7 @@ class IngestionService:
     def __init__(self, vector_store: VectorStoreService) -> None:
         self.settings = get_settings()
         self.vector_store = vector_store
-        self._embedding_semaphore = Semaphore(10)
+        self._embedding_semaphore = Semaphore(4)
 
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.settings.chunk_size,
@@ -125,26 +125,36 @@ class IngestionService:
         logger.info("directory_ingested", directory=directory, count=len(ids))
         return ids
 
-    async def _batch_upsert(self, chunks: List[Document], batch_size: int = 50) -> List[str]:
+    async def _batch_upsert(self, chunks: List[Document], batch_size: int = 100) -> List[str]:
         if not chunks:
             return []
 
         batches = [chunks[i : i + batch_size] for i in range(0, len(chunks), batch_size)]
-        all_ids: List[str] = []
         logger.info("batch_upsert_start", total_batches=len(batches))
 
-        for batch_num, batch in enumerate(batches, 1):
+        async def process_batch(batch_num: int, batch: List[Document]) -> List[str]:
             async with self._embedding_semaphore:
                 try:
                     ids = await self._upsert_batch_with_retry(batch, batch_num)
-                    all_ids.extend(ids)
                     logger.info("batch_upsert_completed", batch_num=batch_num, count=len(ids))
+                    return ids
                 except Exception as exc:
                     logger.error("batch_upsert_error", batch_num=batch_num, error=str(exc))
                     raise
-            await asyncio.sleep(0)
+
+        tasks = [
+            asyncio.create_task(process_batch(batch_num, batch))
+            for batch_num, batch in enumerate(batches, 1)
+        ]
+
+        results = await asyncio.gather(*tasks)
+
+        all_ids: List[str] = []
+        for ids in results:
+            all_ids.extend(ids)
 
         return all_ids
+
 
     async def _upsert_batch_with_retry(
         self,

@@ -13,3 +13,5 @@ vector_store_api_key_secret_arn = "arn:aws:secretsmanager:eu-west-2:337480111522
 
 
 lambda_package_path = "lambda-dispatcher.zip"
+fargate_cpu    = 2048
+fargate_memory = 4096

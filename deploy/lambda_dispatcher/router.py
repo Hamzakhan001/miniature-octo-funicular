@@ -10,20 +10,29 @@ from config import (
     ECS_SECURITY_GROUPS,
     ECS_SUBNETS,
     ECS_TASK_DEFINITION,
+    JOB_STATUS_BACKEND,
+    JOB_STATUS_TABLE_NAME,
     LAMBDA_MAX_INLINE_FILE_SIZE_MB,
 )
 
 ecs = boto3.client("ecs", region_name=AWS_REGION)
+dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION) if JOB_STATUS_BACKEND == "dynamodb" and JOB_STATUS_TABLE_NAME else None
+job_table = dynamodb.Table(JOB_STATUS_TABLE_NAME) if dynamodb else None
 
 
 def process_record(payload: dict) -> None:
+    job_id = payload["job_id"]
     file_size_bytes = payload.get("file_size_bytes", 0)
     lambda_limit_bytes = LAMBDA_MAX_INLINE_FILE_SIZE_MB * 1024 * 1024
 
+    update_job_status(job_id, "queued")
+
     if file_size_bytes > lambda_limit_bytes:
+        update_job_status(job_id, "processing_fargate")
         dispatch_to_fargate(payload)
         return
 
+    update_job_status(job_id, "processing_fargate")
     dispatch_to_fargate(payload)
 
 
@@ -54,3 +63,27 @@ def dispatch_to_fargate(payload: dict) -> None:
             ]
         },
     )
+
+
+def update_job_status(job_id: str, status: str) -> None:
+    if not job_table:
+        return
+
+    job_table.update_item(
+        Key={"job_id": job_id},
+        UpdateExpression="SET #status = :status, #updated_at = :updated_at",
+        ExpressionAttributeNames={
+            "#status": "status",
+            "#updated_at": "updated_at",
+        },
+        ExpressionAttributeValues={
+            ":status": status,
+            ":updated_at": _utc_now(),
+        },
+    )
+
+
+def _utc_now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()

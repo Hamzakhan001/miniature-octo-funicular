@@ -11,3 +11,5 @@ ECS_ASSIGN_PUBLIC_IP = os.environ.get("ECS_ASSIGN_PUBLIC_IP", "false").lower() =
 
 LAMBDA_MAX_INLINE_FILE_SIZE_MB = int(os.environ.get("LAMBDA_MAX_INLINE_FILE_SIZE_MB", "12"))
 
+JOB_STATUS_BACKEND = os.environ.get("JOB_STATUS_BACKEND", "")
+JOB_STATUS_TABLE_NAME = os.environ.get("JOB_STATUS_TABLE_NAME", "")

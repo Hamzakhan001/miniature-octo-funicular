@@ -16,7 +16,7 @@ from app.core.secrets import get_secret_value
 from app.core.config import get_settings
 from app.core.logging import logger
 
-_thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pinecone")
+_thread_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pinecone")
 
 
 class VectorStoreService:
