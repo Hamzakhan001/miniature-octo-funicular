@@ -381,7 +381,7 @@ resource "aws_iam_role_policy_attachment" "lambda_ingestion_attach" {
 resource "aws_lambda_function" "ingestion_router" {
   function_name = "${local.name_prefix}-ingestion-router"
   role          = aws_iam_role.lambda_role.arn
-  handler       = "handler.handler"
+  handler = "app.workers.lambda_handler.handler"
   runtime       = "python3.13"
   timeout       = 300
   memory_size   = 1024
@@ -414,7 +414,7 @@ resource "aws_lambda_function" "ingestion_router" {
   }
 
   
-
+§
   tags = local.common_tags
 }
 

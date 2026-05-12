@@ -25,6 +25,14 @@ class IngestionEventProcessor:
     async def process(self, payload: dict[str, Any], *, execution_mode: str = "lambda") -> dict[str, Any]:
         job_id = payload["job_id"]
 
+        logger.info(
+            "ingestion_event_processor_start",
+            job_id=job_id,
+            execution_mode=execution_mode,
+            processing_target=payload.get("processing_target"),
+            object_key=payload.get("object_key"),
+        )
+
         # Create a job record lazily for raw S3 events if it does not already exist.
         existing = self.job_repository.get_job(job_id)
         if existing is None:
@@ -48,6 +56,7 @@ class IngestionEventProcessor:
         processing_target = payload.get("processing_target", "fargate")
         if processing_target == "fargate":
             self.job_repository.update_status(job_id, status="processing_fargate")
+            logger.info("ingestion_dispatching_to_fargate", job_id=job_id)
             dispatch_result = self.fargate_dispatcher.dispatch(payload)
             return {"status": "dispatched", **dispatch_result}
 
