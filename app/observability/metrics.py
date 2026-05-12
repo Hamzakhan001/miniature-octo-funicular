@@ -50,6 +50,38 @@ RAG_EVAL_SCORE = Histogram(
     buckets=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
 )
 
+INGESTION_JOBS_TOTAL = Counter(
+    "ingestion_jobs_total",
+    "Total ingestion jobs by status and target.",
+    ["status", "processing_target"],
+)
+
+INGESTION_STAGE_LATENCY_SECONDS = Histogram(
+    "ingestion_stage_latency_seconds",
+    "Latency by ingestion stage.",
+    ["stage"],
+    buckets=(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600),
+)
+
+INGESTION_CHUNKS_CREATED = Histogram(
+    "ingestion_chunks_created",
+    "Chunks created per ingestion job.",
+    buckets=(0, 10, 50, 100, 500, 1000, 5000, 10000, 50000),
+)
+
+INGESTION_BATCHES_TOTAL = Histogram(
+    "ingestion_batches_total",
+    "Total batches per ingestion job.",
+    buckets=(0, 1, 5, 10, 50, 100, 500, 1000),
+)
+
+INGESTION_RATE_LIMIT_HITS_TOTAL = Counter(
+    "ingestion_rate_limit_hits_total",
+    "Embedding/upsert rate limit hits.",
+    ["stage"],
+)
+
+
 
 def configure_metrics(app: FastAPI) -> None:
     HTTP_INSTRUMENTATION.instrument(app).expose(

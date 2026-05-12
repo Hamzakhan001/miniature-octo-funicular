@@ -30,6 +30,9 @@ class IngestionJobRecord:
     result: Optional[dict[str, Any]]
     created_at: str
     updated_at: str
+    stage_timestamps: dict[str, str]
+    progress: dict[str, Any]
+
 
 
 class SQLiteJobRepository:
@@ -64,7 +67,9 @@ class SQLiteJobRepository:
                     error TEXT,
                     result_json TEXT,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    stage_timestamps_json TEXT NOT NULL,
+                    progress_json TEXT NOT NULL
                 )
                 """
             )

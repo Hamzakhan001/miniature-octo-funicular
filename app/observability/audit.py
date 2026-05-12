@@ -34,3 +34,9 @@ class IngestionAuditRecord(BaseModel):
     latency_ms: float = 0.0
     error: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    total_chars_ingested: int = 0
+    avg_chars_per_chunk: float= 0.0
+    estimated_tokens: int = 0
+    estimated_embedding_cost_usd: float = 0.0
+    chunking_size_config: int = 0
+    chunk_overlap_config: int = 0
