@@ -385,6 +385,7 @@ resource "aws_lambda_function" "ingestion_router" {
   runtime       = "python3.13"
   timeout       = 300
   memory_size   = 1024
+  
 
   filename         = var.lambda_package_path
   source_code_hash = filebase64sha256(var.lambda_package_path)
@@ -393,6 +394,7 @@ resource "aws_lambda_function" "ingestion_router" {
     variables = {
       STORAGE_BACKEND                 = "s3"
       QUEUE_BACKEND                   = "sqs"
+      JOB_STATUS_BACKEND              = "dynamodb"
       S3_INGESTION_BUCKET             = aws_s3_bucket.ingestion.bucket
       SQS_INGESTION_QUEUE_URL         = aws_sqs_queue.ingestion.id
       ECS_CLUSTER                     = aws_ecs_cluster.ingestion.name
@@ -410,6 +412,8 @@ resource "aws_lambda_function" "ingestion_router" {
       VECTOR_STORE_API_KEY_SECRET_ARN = var.vector_store_api_key_secret_arn
     }
   }
+
+  
 
   tags = local.common_tags
 }

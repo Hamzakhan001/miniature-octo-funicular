@@ -20,7 +20,6 @@ def _extract_payloads(record: dict[str, Any]) -> list[dict[str, Any]]:
         )
         return [body]
 
-    # Raw S3 -> SQS event
     payloads: list[dict[str, Any]] = []
     for s3_record in body.get("Records", []):
         s3 = s3_record.get("s3", {})
