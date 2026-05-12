@@ -18,7 +18,7 @@ def get_vector_store() -> VectorStoreService:
 
 @lru_cache
 def get_ingestion_service() -> IngestionService:
-    return IngestionService(vector_store = get_vector_store())
+    return IngestionService(vector_store = get_vector_store(),job_repository=get_job_repository())
 
 @lru_cache
 def get_job_repository():

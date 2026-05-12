@@ -97,6 +97,8 @@ async def ingest_file(file: UploadFile = File(...)):
             metadata=job.metadata,
             created_at=job.created_at,
             updated_at=job.updated_at,
+            stage_timestamps=job.stage_timestamps,
+    progress=job.progress,
         )
     except HTTPException:
         raise
@@ -124,6 +126,8 @@ def get_task_status(job_id: str):
             result=job.result,
             error=job.error,
             metadata=job.metadata,
+            stage_timestamps=job.stage_timestamps,
+            progress=job.progress,
             created_at=job.created_at,
             updated_at=job.updated_at,
         )

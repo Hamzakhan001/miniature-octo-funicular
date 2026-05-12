@@ -25,10 +25,11 @@ SUPPORTED_EXTENSIONS = {".pdf", ".md", ".txt", ".docx", ".html", ".csv"}
 class IngestionService:
     """Async document ingestion service."""
 
-    def __init__(self, vector_store: VectorStoreService) -> None:
+    def __init__(self, vector_store: VectorStoreService,job_repository=None) -> None:
         self.settings = get_settings()
         self.vector_store = vector_store
         self._embedding_semaphore = Semaphore(4)
+        self.job_repository = job_repository
 
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.settings.chunk_size,
@@ -59,6 +60,11 @@ class IngestionService:
             latency_ms=(time.perf_counter() - t0) * 1000,
             metadata=metadata or {},
         )
+        total_chars = sum(len(c.page_content) for c in chunks)
+        avg_chars = total_chars / len(chunks) if chunks else 0.0
+        estimated_tokens = total_chars // 4
+        cost = (estimated_tokens / 1000) * 0.0001
+        audit.cost = cost
         write_audit_record(audit.model_dump())
         return ids
 
@@ -87,6 +93,10 @@ class IngestionService:
         latency_ms=(time.perf_counter() - t0) * 1000,
         metadata=metadata or {},
         )
+        total_chars = sum(len(c.page_content) for c in chunks)
+        avg_chars = total_chars / len(chunks) if chunks else 0.0
+        estimated_tokens = total_chars // 4
+        cost = (estimated_tokens / 1000) * 0.0001
         write_audit_record(audit.model_dump())
         return ids
 

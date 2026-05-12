@@ -94,6 +94,8 @@ class IngestionJobStatusResponse(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
+    stage_timestamps: Dict[str, str] = Field(default_factory=dict)
+    progress: Dict[str, Any] = Field(default_factory=dict)
 
 
 class DeleteRequest(BaseModel):
