@@ -103,8 +103,9 @@ class SQLiteJobRepository:
                 INSERT INTO ingestion_jobs (
                     job_id, status, filename, content_type, object_key,
                     file_size_bytes, processing_target, upload_url, upload_method,
-                    metadata_json, error, result_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    metadata_json, error, result_json, created_at, updated_at,
+                    stage_timestamps_json, progress_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -121,6 +122,14 @@ class SQLiteJobRepository:
                     None,
                     now,
                     now,
+                    json.dumps({"upload_session_created_at": now}),
+                    json.dumps({
+                        "current_stage": "upload_session_created",
+                        "chunks_created": 0,
+                        "total_batches": 0,
+                        "completed_batches": 0,
+                        "vectors_upserted": 0,
+                    }),
                 ),
             )
         return self.get_job(job_id)
@@ -185,7 +194,70 @@ class SQLiteJobRepository:
             result=json.loads(row["result_json"]) if row["result_json"] else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            stage_timestamps=json.loads(row["stage_timestamps_json"] or "{}"),
+            progress=json.loads(row["progress_json"] or "{}"),
         )
+
+    def mark_stage(
+        self,
+        job_id: str,
+        *,
+        stage: str,
+        timestamp: Optional[str] = None,
+        current_stage: Optional[str] = None,
+    ) -> IngestionJobRecord:
+        existing = self.get_job(job_id)
+        if existing is None:
+            raise KeyError(f"Unknown ingestion job: {job_id}")
+        stage_timestamps = {**existing.stage_timestamps, stage: timestamp or utc_now()}
+        progress = {**existing.progress}
+        if current_stage is not None:
+            progress["current_stage"] = current_stage
+        return self._update_tracking(job_id, stage_timestamps=stage_timestamps, progress=progress)
+
+    def update_progress(
+        self,
+        job_id: str,
+        *,
+        current_stage: Optional[str] = None,
+        chunks_created: Optional[int] = None,
+        total_batches: Optional[int] = None,
+        completed_batches: Optional[int] = None,
+        vectors_upserted: Optional[int] = None,
+    ) -> IngestionJobRecord:
+        existing = self.get_job(job_id)
+        if existing is None:
+            raise KeyError(f"Unknown ingestion job: {job_id}")
+        progress = {**existing.progress}
+        if current_stage is not None:
+            progress["current_stage"] = current_stage
+        if chunks_created is not None:
+            progress["chunks_created"] = chunks_created
+        if total_batches is not None:
+            progress["total_batches"] = total_batches
+        if completed_batches is not None:
+            progress["completed_batches"] = completed_batches
+        if vectors_upserted is not None:
+            progress["vectors_upserted"] = vectors_upserted
+        return self._update_tracking(job_id, stage_timestamps=existing.stage_timestamps, progress=progress)
+
+    def _update_tracking(
+        self,
+        job_id: str,
+        *,
+        stage_timestamps: dict[str, str],
+        progress: dict[str, Any],
+    ) -> IngestionJobRecord:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE ingestion_jobs
+                SET stage_timestamps_json = ?, progress_json = ?, updated_at = ?
+                WHERE job_id = ?
+                """,
+                (json.dumps(stage_timestamps), json.dumps(progress), utc_now(), job_id),
+            )
+        return self.get_job(job_id)
 
 
 class DynamoDBJobRepository:
@@ -231,6 +303,14 @@ class DynamoDBJobRepository:
             "result": None,
             "created_at": now,
             "updated_at": now,
+            "stage_timestamps": {"upload_session_created_at": now},
+            "progress": {
+                "current_stage": "upload_session_created",
+                "chunks_created": 0,
+                "total_batches": 0,
+                "completed_batches": 0,
+                "vectors_upserted": 0,
+            },
         }
         self._table.put_item(Item=item)
         return self.get_job(job_id)
@@ -255,6 +335,8 @@ class DynamoDBJobRepository:
             result=item.get("result"),
             created_at=item["created_at"],
             updated_at=item["updated_at"],
+            stage_timestamps=item.get("stage_timestamps", {}),
+            progress=item.get("progress", {}),
         )
 
     def update_status(
@@ -294,6 +376,76 @@ class DynamoDBJobRepository:
                 ":result": result,
                 ":upload_url": next_upload_url,
                 ":upload_method": next_upload_method,
+                ":updated_at": utc_now(),
+            },
+        )
+        return self.get_job(job_id)
+
+    def mark_stage(
+        self,
+        job_id: str,
+        *,
+        stage: str,
+        timestamp: Optional[str] = None,
+        current_stage: Optional[str] = None,
+    ) -> IngestionJobRecord:
+        existing = self.get_job(job_id)
+        if existing is None:
+            raise KeyError(f"Unknown ingestion job: {job_id}")
+        stage_timestamps = {**existing.stage_timestamps, stage: timestamp or utc_now()}
+        progress = {**existing.progress}
+        if current_stage is not None:
+            progress["current_stage"] = current_stage
+        return self._update_tracking(job_id, stage_timestamps=stage_timestamps, progress=progress)
+
+    def update_progress(
+        self,
+        job_id: str,
+        *,
+        current_stage: Optional[str] = None,
+        chunks_created: Optional[int] = None,
+        total_batches: Optional[int] = None,
+        completed_batches: Optional[int] = None,
+        vectors_upserted: Optional[int] = None,
+    ) -> IngestionJobRecord:
+        existing = self.get_job(job_id)
+        if existing is None:
+            raise KeyError(f"Unknown ingestion job: {job_id}")
+        progress = {**existing.progress}
+        if current_stage is not None:
+            progress["current_stage"] = current_stage
+        if chunks_created is not None:
+            progress["chunks_created"] = chunks_created
+        if total_batches is not None:
+            progress["total_batches"] = total_batches
+        if completed_batches is not None:
+            progress["completed_batches"] = completed_batches
+        if vectors_upserted is not None:
+            progress["vectors_upserted"] = vectors_upserted
+        return self._update_tracking(job_id, stage_timestamps=existing.stage_timestamps, progress=progress)
+
+    def _update_tracking(
+        self,
+        job_id: str,
+        *,
+        stage_timestamps: dict[str, str],
+        progress: dict[str, Any],
+    ) -> IngestionJobRecord:
+        self._table.update_item(
+            Key={"job_id": job_id},
+            UpdateExpression=(
+                "SET #stage_timestamps = :stage_timestamps, "
+                "#progress = :progress, "
+                "#updated_at = :updated_at"
+            ),
+            ExpressionAttributeNames={
+                "#stage_timestamps": "stage_timestamps",
+                "#progress": "progress",
+                "#updated_at": "updated_at",
+            },
+            ExpressionAttributeValues={
+                ":stage_timestamps": stage_timestamps,
+                ":progress": progress,
                 ":updated_at": utc_now(),
             },
         )

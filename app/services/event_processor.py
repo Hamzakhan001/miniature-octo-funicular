@@ -75,16 +75,22 @@ class IngestionEventProcessor:
         self.job_repository.update_status(job_id, status=status)
 
         file_bytes = self.storage_service.read_object_bytes(payload["object_key"])
-        ids = await self.ingestion_service.ingest_file(
-            file_bytes=file_bytes,
-            filename=payload["filename"],
-            metadata={
-                **payload.get("metadata", {}),
-                "job_id": job_id,
-                "object_key": payload["object_key"],
-                "processing_target": processing_target,
-            },
-        )
+
+        try:
+            ids = await self.ingestion_service.ingest_file(
+                file_bytes=file_bytes,
+                filename=payload["filename"],
+                metadata={
+                    **payload.get("metadata", {}),
+                    "job_id": job_id,
+                    "object_key": payload["object_key"],
+                    "processing_target": processing_target,
+                },
+            )
+        except Exception as e:
+            self._job_repository.update_status(job_id, status="failed", error=str(exc))
+            INGESTION_JOBS_TOTAL.labels(status="failed", processing_target=processing_target).inc()
+            raise
 
         result = {
             "status": "ok",
@@ -95,5 +101,6 @@ class IngestionEventProcessor:
         self.job_repository.update_status(job_id, status="completed", result=result)
         INGESTION_STAGE_LATENCY_SECONDS.labels(stage=processing_target).observe(time.perf_counter() - t0)
         INGESTION_JOBS_TOTAL.labels(status="completed", processing_target=processing_target).inc()
+
         logger.info("ingestion_completed", job_id=job_id, chunks=len(ids), execution_mode=processing_target)
         return result
