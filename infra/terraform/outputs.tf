@@ -25,3 +25,8 @@ output "ecs_cluster_name" {
 output "ecs_task_definition_family" {
   value = aws_ecs_task_definition.ingestion_worker.family
 }
+
+output "pushgateway_url" {
+  value       = "http://${aws_lb.pushgateway.dns_name}:9091"
+  description = "Pushgateway endpoint — use this in prometheus.yml and PUSHGATEWAY_URL env var"
+}

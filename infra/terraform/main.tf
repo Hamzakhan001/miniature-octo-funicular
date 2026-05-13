@@ -298,7 +298,8 @@ resource "aws_ecs_task_definition" "ingestion_worker" {
         { name = "JOB_STATUS_BACKEND", value = "dynamodb" },
         { name = "JOB_STATUS_TABLE_NAME", value = aws_dynamodb_table.job_status.name },
         { name = "OPENAI_API_KEY_SECRET_ARN", value = var.openai_api_key_secret_arn },
-        { name = "VECTOR_STORE_API_KEY_SECRET_ARN", value = var.vector_store_api_key_secret_arn }
+        { name = "VECTOR_STORE_API_KEY_SECRET_ARN", value = var.vector_store_api_key_secret_arn },
+        { name = "PUSHGATEWAY_URL", value = "http://${aws_lb.pushgateway.dns_name}:9091" }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -423,4 +424,125 @@ resource "aws_lambda_event_source_mapping" "ingestion" {
   function_name           = aws_lambda_function.ingestion_router.arn
   batch_size              = 5
   function_response_types = ["ReportBatchItemFailures"]
+}
+
+# ── Prometheus Pushgateway ──────────────────────────────────────────────────
+
+resource "aws_cloudwatch_log_group" "pushgateway_logs" {
+  name              = "/ecs/${local.name_prefix}-pushgateway"
+  retention_in_days = 14
+  tags              = local.common_tags
+}
+
+resource "aws_security_group" "pushgateway" {
+  name        = "${local.name_prefix}-pushgateway-sg"
+  description = "Prometheus Pushgateway - allows port 9091 from anywhere"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port   = 9091
+    to_port     = 9091
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_lb" "pushgateway" {
+  name               = "${local.name_prefix}-pgw"
+  internal           = false
+  load_balancer_type = "network"
+  subnets            = var.public_subnet_ids
+  tags               = local.common_tags
+}
+
+resource "aws_lb_target_group" "pushgateway" {
+  name        = "${local.name_prefix}-pgw"
+  port        = 9091
+  protocol    = "TCP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    protocol            = "HTTP"
+    path                = "/-/healthy"
+    port                = "9091"
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    interval            = 30
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_lb_listener" "pushgateway" {
+  load_balancer_arn = aws_lb.pushgateway.arn
+  port              = 9091
+  protocol          = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.pushgateway.arn
+  }
+}
+
+resource "aws_ecs_task_definition" "pushgateway" {
+  family                   = "${local.name_prefix}-pushgateway"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+
+  container_definitions = jsonencode([{
+    name      = "pushgateway"
+    image     = "prom/pushgateway:latest"
+    essential = true
+    portMappings = [{
+      containerPort = 9091
+      protocol      = "tcp"
+    }]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.pushgateway_logs.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "ecs"
+      }
+    }
+  }])
+
+  tags = local.common_tags
+}
+
+resource "aws_ecs_service" "pushgateway" {
+  name            = "${local.name_prefix}-pushgateway"
+  cluster         = aws_ecs_cluster.ingestion.id
+  task_definition = aws_ecs_task_definition.pushgateway.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.public_subnet_ids
+    security_groups  = [aws_security_group.pushgateway.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.pushgateway.arn
+    container_name   = "pushgateway"
+    container_port   = 9091
+  }
+
+  depends_on = [aws_lb_listener.pushgateway]
+
+  tags = local.common_tags
 }

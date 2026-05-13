@@ -50,6 +50,7 @@ RAG_EVAL_SCORE = Histogram(
     buckets=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
 )
 
+
 INGESTION_JOBS_TOTAL = Counter(
     "ingestion_jobs_total",
     "Total ingestion jobs by status and target.",
@@ -80,7 +81,6 @@ INGESTION_RATE_LIMIT_HITS_TOTAL = Counter(
     "Embedding/upsert rate limit hits.",
     ["stage"],
 )
-
 
 
 def configure_metrics(app: FastAPI) -> None:
@@ -128,3 +128,23 @@ def observe_query_outcome(
         retrieval_method=retrieval_method,
         outcome=outcome,
     ).observe(latency_seconds)
+
+
+def push_to_pushgateway(job_id: str, processing_target: str) -> None:
+    from app.core.config import get_settings
+    from app.core.logging import logger
+
+    settings = get_settings()
+    if not settings.pushgateway_url:
+        return
+    try:
+        from prometheus_client import REGISTRY, push_to_gateway
+        push_to_gateway(
+            settings.pushgateway_url,
+            job="ingestion",
+            grouping_key={"job_id": job_id, "processing_target": processing_target},
+            registry=REGISTRY,
+        )
+        logger.info("pushgateway_push_success", job_id=job_id)
+    except Exception as exc:
+        logger.warning("pushgateway_push_failed", job_id=job_id, error=str(exc))

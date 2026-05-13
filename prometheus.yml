@@ -1,7 +1,12 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 15s
 
 scrape_configs:
   - job_name: "rag-api"
     static_configs:
       - targets: ["host.docker.internal:8000"]
+
+  - job_name: "pushgateway"
+    honor_labels: true
+    static_configs:
+      - targets: ["retrieval-process-docs-dev-pgw-3c59519005012ac6.elb.eu-west-2.amazonaws.com:9091"]

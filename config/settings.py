@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     ingestion_queue_max_attempts: int = 5
     ingestion_worker_concurrency: int = 2
     ingestion_base_retry_seconds: int = 5
+    pushgateway_url: str = ""
 
     app_env: Literal["development", "production", "test"] = "development"
     cors_origins: Any = (

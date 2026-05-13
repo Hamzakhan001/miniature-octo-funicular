@@ -21,6 +21,11 @@ variable "private_subnet_ids" {
   type = list(string)
 }
 
+variable "public_subnet_ids" {
+  type        = list(string)
+  description = "Public subnets for the Pushgateway NLB (internet-facing so local Prometheus can scrape)"
+}
+
 variable "container_image" {
   type = string
 }

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from app.core.logging import logger
 from app.services.fargate_dispatcher import FargateDispatcher
 from app.services.ingestion import IngestionService
 from app.services.storage import StorageService
-from app.observability.metrics import INGESTION_JOBS_TOTAL, INGESTION_STAGE_LATENCY_SECONDS
+from app.observability.metrics import (
+    INGESTION_JOBS_TOTAL,
+    INGESTION_STAGE_LATENCY_SECONDS,
+    push_to_pushgateway,
+)
 
 
 class IngestionEventProcessor:
@@ -34,7 +39,6 @@ class IngestionEventProcessor:
             object_key=payload.get("object_key"),
         )
 
-        # Create a job record lazily for raw S3 events if it does not already exist.
         existing = self.job_repository.get_job(job_id)
         if existing is None:
             self.job_repository.create_job(
@@ -49,7 +53,6 @@ class IngestionEventProcessor:
             )
         elif existing.status == "pending_upload":
             self.job_repository.update_status(job_id, status="queued")
-
 
         if execution_mode == "fargate":
             return await self._process_file(payload, status="processing_fargate", processing_target="fargate")
@@ -88,19 +91,21 @@ class IngestionEventProcessor:
                 },
             )
         except Exception as e:
-            self._job_repository.update_status(job_id, status="failed", error=str(exc))
+            self.job_repository.update_status(job_id, status="failed", error=str(e))
             INGESTION_JOBS_TOTAL.labels(status="failed", processing_target=processing_target).inc()
+            push_to_pushgateway(job_id, processing_target)
             raise
 
+        latency = time.perf_counter() - t0
         result = {
             "status": "ok",
             "filename": payload["filename"],
             "chunks": len(ids),
-            "ids": ids,
         }
         self.job_repository.update_status(job_id, status="completed", result=result)
-        INGESTION_STAGE_LATENCY_SECONDS.labels(stage=processing_target).observe(time.perf_counter() - t0)
+        INGESTION_STAGE_LATENCY_SECONDS.labels(stage=processing_target).observe(latency)
         INGESTION_JOBS_TOTAL.labels(status="completed", processing_target=processing_target).inc()
+        push_to_pushgateway(job_id, processing_target)
 
-        logger.info("ingestion_completed", job_id=job_id, chunks=len(ids), execution_mode=processing_target)
+        logger.info("ingestion_completed", job_id=job_id, chunks=len(ids), latency_seconds=round(latency, 2), execution_mode=processing_target)
         return result
