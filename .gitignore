@@ -17,3 +17,4 @@ wheels/
 terraform.tfvars
 lambda.zip
 
+data/sponsor_outreach/
