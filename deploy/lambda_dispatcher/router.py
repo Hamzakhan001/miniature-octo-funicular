@@ -87,9 +87,9 @@ def mark_stage_raw(job_id: str, stage: str, current_stage: str) -> None:
     if not job_table:
         return 
     
-    now = utc.now()
+    now = _utc_now()
     job_table.update_item(
-        key = {"job_id": job_id},
+            Key = {"job_id": job_id},
         UpdateExpression=(
             "SET #stage_timestamps.#stage = :ts, "
             "#progress.#current_stage = :current_stage, "

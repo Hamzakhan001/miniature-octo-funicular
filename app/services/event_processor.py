@@ -70,6 +70,7 @@ class IngestionEventProcessor:
         status: str,
         processing_target: str,
     ) -> dict[str, Any]:
+        t0 = time.perf_counter()
         job_id = payload["job_id"]
         self.job_repository.update_status(job_id, status=status)
 
@@ -92,6 +93,7 @@ class IngestionEventProcessor:
             "ids": ids,
         }
         self.job_repository.update_status(job_id, status="completed", result=result)
+        INGESTION_STAGE_LATENCY_SECONDS.labels(stage=processing_target).observe(time.perf_counter() - t0)
         INGESTION_JOBS_TOTAL.labels(status="completed", processing_target=processing_target).inc()
         logger.info("ingestion_completed", job_id=job_id, chunks=len(ids), execution_mode=processing_target)
         return result
