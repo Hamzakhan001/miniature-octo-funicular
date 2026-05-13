@@ -19,6 +19,12 @@ from app.core.config import get_settings
 from app.core.logging import logger
 from app.services.vector_store import VectorStoreService
 
+from app.observability.metrics import (
+    INGESTION_CHUNKS_CREATED,
+    INGESTION_BATCHES_TOTAL,
+    INGESTION_RATE_LIMIT_HITS_TOTAL,
+)
+
 SUPPORTED_EXTENSIONS = {".pdf", ".md", ".txt", ".docx", ".html", ".csv"}
 
 
@@ -51,6 +57,10 @@ class IngestionService:
         chunks = await asyncio.to_thread(self._chunk_text_sync, text, source, metadata or {})
         ids = await self._batch_upsert(chunks)
         logger.info("ingested_text", source=source, count=len(ids))
+        total_chars = sum(len(c.page_content) for c in chunks)
+        avg_chars = total_chars / len(chunks) if chunks else 0.0
+        estimated_tokens = total_chars // 4
+        cost = (estimated_tokens / 1000) * 0.0001
         audit = IngestionAuditRecord(
             source_name=source,
             source_type="text",
@@ -59,12 +69,13 @@ class IngestionService:
             vectors_upserted=len(ids),
             latency_ms=(time.perf_counter() - t0) * 1000,
             metadata=metadata or {},
+            total_chars_ingested=total_chars,
+            avg_chars_per_chunk=avg_chars,
+            estimated_tokens=estimated_tokens,
+            estimated_embedding_cost_usd=cost,
+            chunking_size_config=self.settings.chunk_size,
+            chunk_overlap_config=self.settings.chunk_overlap,
         )
-        total_chars = sum(len(c.page_content) for c in chunks)
-        avg_chars = total_chars / len(chunks) if chunks else 0.0
-        estimated_tokens = total_chars // 4
-        cost = (estimated_tokens / 1000) * 0.0001
-        audit.cost = cost
         write_audit_record(audit.model_dump())
         return ids
 
@@ -84,19 +95,25 @@ class IngestionService:
         logger.info("file_parsed", filename=filename, chunks_before_upsert=len(chunks))
         ids = await self._batch_upsert(chunks)
         logger.info("file_ingested", filename=filename, count=len(ids))
-        audit = IngestionAuditRecord(
-        source_name=filename,
-        source_type=Path(filename).suffix.lower().lstrip(".") or "file",
-        status="success",
-        chunks_created=len(chunks),
-        vectors_upserted=len(ids),
-        latency_ms=(time.perf_counter() - t0) * 1000,
-        metadata=metadata or {},
-        )
         total_chars = sum(len(c.page_content) for c in chunks)
         avg_chars = total_chars / len(chunks) if chunks else 0.0
         estimated_tokens = total_chars // 4
         cost = (estimated_tokens / 1000) * 0.0001
+        audit = IngestionAuditRecord(
+            source_name=filename,
+            source_type=Path(filename).suffix.lower().lstrip(".") or "file",
+            status="success",
+            chunks_created=len(chunks),
+            vectors_upserted=len(ids),
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            metadata=metadata or {},
+            total_chars_ingested=total_chars,
+            avg_chars_per_chunk=avg_chars,
+            estimated_tokens=estimated_tokens,
+            estimated_embedding_cost_usd=cost,
+            chunking_size_config=self.settings.chunk_size,
+            chunk_overlap_config=self.settings.chunk_overlap,
+        )
         write_audit_record(audit.model_dump())
         return ids
 
@@ -140,6 +157,8 @@ class IngestionService:
             return []
 
         batches = [chunks[i : i + batch_size] for i in range(0, len(chunks), batch_size)]
+        INGESTION_CHUNKS_CREATED.observe(len(chunks))
+        INGESTION_BATCHES_TOTAL.observe(len(batches))
         logger.info("batch_upsert_start", total_batches=len(batches))
 
         queue: asyncio.Queue[tuple[int, List[Document]] | None] = asyncio.Queue()
@@ -201,6 +220,7 @@ class IngestionService:
 
                 wait_seconds = 5 * (2**attempt)
                 if is_rate_limit:
+                    INGESTION_RATE_LIMIT_HITS_TOTAL.labels(stage="embedding_upsert").inc()
                     logger.warning(
                         "rate_limit_hit",
                         batch_num=batch_num,

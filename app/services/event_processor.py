@@ -6,6 +6,7 @@ from app.core.logging import logger
 from app.services.fargate_dispatcher import FargateDispatcher
 from app.services.ingestion import IngestionService
 from app.services.storage import StorageService
+from app.observability.metrics import INGESTION_JOBS_TOTAL, INGESTION_STAGE_LATENCY_SECONDS
 
 
 class IngestionEventProcessor:
@@ -91,5 +92,6 @@ class IngestionEventProcessor:
             "ids": ids,
         }
         self.job_repository.update_status(job_id, status="completed", result=result)
+        INGESTION_JOBS_TOTAL.labels(status="completed", processing_target=processing_target).inc()
         logger.info("ingestion_completed", job_id=job_id, chunks=len(ids), execution_mode=processing_target)
         return result

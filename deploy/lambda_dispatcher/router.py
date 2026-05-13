@@ -26,13 +26,14 @@ def process_record(payload: dict) -> None:
     lambda_limit_bytes = LAMBDA_MAX_INLINE_FILE_SIZE_MB * 1024 * 1024
 
     update_job_status(job_id, "queued")
-
+    mark_stage_raw(job_id, "lambda_received_at", "lambda_received")
     if file_size_bytes > lambda_limit_bytes:
         update_job_status(job_id, "processing_fargate")
         dispatch_to_fargate(payload)
         return
 
     update_job_status(job_id, "processing_fargate")
+    mark_stage_raw(job_id, "fargate_dispatched_at", "fargate_dispatched")
     dispatch_to_fargate(payload)
 
 
@@ -79,6 +80,32 @@ def update_job_status(job_id: str, status: str) -> None:
         ExpressionAttributeValues={
             ":status": status,
             ":updated_at": _utc_now(),
+        },
+    )
+
+def mark_stage_raw(job_id: str, stage: str, current_stage: str) -> None:
+    if not job_table:
+        return 
+    
+    now = utc.now()
+    job_table.update_item(
+        key = {"job_id": job_id},
+        UpdateExpression=(
+            "SET #stage_timestamps.#stage = :ts, "
+            "#progress.#current_stage = :current_stage, "
+            "#updated_at = :updated_at"
+        ),
+        ExpressionAttributeNames={
+            "#stage_timestamps": "stage_timestamps",
+            "#stage": stage,
+            "#progress": "progress",
+            "#current_stage": current_stage,
+            "#updated_at": "updated_at",
+        },
+        ExpressionAttributeValues={
+            ":ts": now,
+            ":current_stage": current_stage,
+            ":updated_at": now,
         },
     )
 

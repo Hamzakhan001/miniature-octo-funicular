@@ -74,6 +74,13 @@ class SQLiteJobRepository:
                 """
             )
 
+            for col,default in [("stage_timestamps_json", "'{}'"),
+            ("progress_json", "'{}'")]:
+                try:
+                    connection.execute(f"ALTER TABLE ingestion_jobs ADD COLUMN {col} {default}")
+                except sqlite3.OperationalError:
+                    pass
+
     def create_job(
         self,
         *,
