@@ -1,299 +1,223 @@
-# Retrieval Process Docs
+# Production RAG Pipeline
 
-> Production-oriented RAG system with an event-driven document ingestion pipeline on AWS.
+A production-grade Retrieval-Augmented Generation system with event-driven async document ingestion, vector search, automated evaluation, and full observability. Built for real workloads — not a tutorial demo.
 
-This project combines:
-
-- a **RAG application** for grounded retrieval and answer generation
-- a **queue-driven ingestion pipeline** for asynchronous document processing
-- **AWS event-driven infrastructure** using S3, SQS, Lambda, Fargate, DynamoDB, Secrets Manager, and ECR
-- **observability and evaluation** for production-minded GenAI engineering
-
-## What This Project Is
-
-At a high level, this repo demonstrates how to move from a simple RAG demo to a more production-shaped architecture:
-
-- documents are uploaded and stored durably
-- ingestion is decoupled from user-facing traffic
-- processing is routed asynchronously
-- heavier document work runs in containerized workers
-- embeddings are generated and stored in Pinecone
-- retrieval and generation are evaluated and observable
-
-This is the current cloud ingestion path:
-
-`S3 -> SQS -> Lambda -> Fargate -> OpenAI Embeddings -> Pinecone`
+**Live demo:** [rag.hamzatwin.site](http://rag.hamzatwin.site)
 
 ---
 
-## RAG Architecture
+## What this is
 
-The RAG side of the project follows this flow:
+Most RAG projects are a Jupyter notebook with `retriever.get_relevant_documents()`. This is the full engineering picture around that — async ingestion, cloud infrastructure, evaluation in production, and metrics you can actually act on.
 
-```mermaid
-flowchart LR
-    A["User Query"] --> B["FastAPI Query API"]
-    B --> C["Guardrails and Request Validation"]
-    C --> D["Retriever"]
-    D --> E["Pinecone Vector Search"]
-    E --> F["Hybrid / Reranked Context"]
-    F --> G["Prompt Assembly"]
-    G --> H["OpenAI Chat Model"]
-    H --> I["Grounded Answer"]
-    I --> J["Evaluation and Audit Logs"]
+---
+
+## Architecture
+
+```
+                         ┌──────────────┐
+                         │   Next.js    │
+                         │   Frontend   │
+                         └──────┬───────┘
+                                │
+                         ┌──────▼───────┐
+                         │  FastAPI     │
+                         │  Backend     │
+                         └──────┬───────┘
+                                │
+                    ┌───────────▼───────────┐
+                    │     Amazon S3         │
+                    │  (document storage)   │
+                    └───────────┬───────────┘
+                                │ ObjectCreated event
+                    ┌───────────▼───────────┐
+                    │     Amazon SQS        │
+                    │   (ingestion queue)   │
+                    └───────────┬───────────┘
+                                │
+                    ┌───────────▼───────────┐
+                    │   AWS Lambda Router   │
+                    │  (size-based routing) │
+                    └─────┬─────────┬───────┘
+                          │         │
+              small files │         │ large files (>1MB)
+                          │         │
+               ┌──────────▼─┐   ┌───▼──────────────┐
+               │   Lambda   │   │   ECS Fargate     │
+               │ (inline)   │   │ (containerised)   │
+               └──────────┬─┘   └───┬───────────────┘
+                          │         │
+                          └────┬────┘
+                               │
+                   ┌───────────▼───────────┐
+                   │  Chunk → Embed →      │
+                   │  Upsert (bounded      │
+                   │  concurrency)         │
+                   └───────────┬───────────┘
+                               │
+                   ┌───────────▼───────────┐
+                   │  Pinecone Vector DB   │
+                   └───────────────────────┘
 ```
 
-### RAG flow in plain English
-
-1. A user submits a question.
-2. The query is validated and optionally guarded.
-3. Relevant chunks are retrieved from Pinecone.
-4. Retrieval output is reranked or filtered into final context.
-5. The answer is generated using retrieved evidence only.
-6. The system captures logs, audits, and optional evaluation signals.
-
-### Core RAG building blocks in this repo
-
-- **Chunking**: recursive chunking with overlap
-- **Embeddings**: OpenAI embeddings
-- **Vector store**: Pinecone
-- **Retrieval**: semantic retrieval with optional hybrid/rerank logic
-- **Generation**: OpenAI chat model
-- **Observability**: metrics, audit logs, tracing hooks
-- **Evaluation**: Ragas-based offline evaluation
-
-### Why this RAG design matters
-
-This project is not just “LLM + prompt”.
-It shows the full engineering shape around retrieval:
-
-- document preprocessing
-- vector indexing
-- grounded context assembly
-- evaluation separation between retrieval quality and generation quality
-- production observability
-
----
-
-## Queue-Based Ingestion Architecture
-
-The ingestion pipeline is event-driven and designed to handle asynchronous document processing without blocking the application.
-
-```mermaid
-flowchart LR
-    A["Frontend or API Client"] --> B["FastAPI Upload Control Plane"]
-    B --> C["Amazon S3 Raw Document Bucket"]
-    C --> D["S3 ObjectCreated Event"]
-    D --> E["Amazon SQS Ingestion Queue"]
-    E --> F["AWS Lambda Dispatcher"]
-    F --> G["Payload Enrichment and Routing"]
-    G --> H["Amazon ECS Fargate Worker"]
-    H --> I["Document Parsing and Chunking"]
-    I --> J["OpenAI Embeddings API"]
-    J --> K["Pinecone Vector Database"]
-    H --> L["DynamoDB Job Status Table"]
-    H --> M["CloudWatch Logs and Audit Trail"]
-
-    E --> N["Dead Letter Queue"]
+**Query path:**
+```
+User → Input Guardrail → Vector Retrieve → Rerank → LLM → Output Guardrail → RAGAS Eval → Audit Log → Response
 ```
 
-### Queue ingestion flow
+---
 
-1. A document is uploaded through the API flow or stored in S3.
-2. S3 emits an `ObjectCreated` event.
-3. SQS receives the event and acts as the ingestion buffer.
-4. Lambda consumes the message and normalizes the payload.
-5. Lambda dispatches a one-off Fargate task for heavier document ingestion.
-6. The Fargate worker:
-   - downloads the file
-   - parses it
-   - chunks it
-   - generates embeddings
-   - writes vectors to Pinecone
-   - updates job status
+## Key engineering decisions
 
-### Why the queue matters
+**Dual-path routing (Lambda vs Fargate)**
+A 23MB PDF produces ~32,000 chunks and takes ~19 minutes to embed and upsert. Lambda's 15-minute timeout makes this impossible inline. The router dispatches large files to Fargate and processes small files directly in Lambda — keeping fast ingestion fast and not blocking large jobs.
 
-SQS is used to:
+**SQS decoupling**
+The queue absorbs upload bursts, gives automatic retries with visibility timeout, and isolates failures to a DLQ. The API returns immediately after queuing — users aren't waiting on embedding calls.
 
-- absorb burst uploads
-- decouple upload throughput from processing throughput
-- support retries
-- isolate failures through a DLQ
-- protect the API from long-running document work
+**Bounded concurrency on Pinecone upserts**
+Pinecone rate-limits write throughput. A semaphore caps concurrent batch upserts, avoiding 429 cascades across hundreds of batches without exponential backoff failures.
 
-### Why Lambda and Fargate are both used
+**chunk_size=384**
+Smaller chunks preserve clause-level granularity. Each chunk maps to one coherent idea, improving faithfulness scores in RAGAS evaluation. Larger windows bundle unrelated content into one vector, degrading retrieval precision.
 
-**Lambda**
-- event-driven dispatcher
-- lightweight orchestration
-- no always-on poller to manage
+**Pushgateway for Fargate metrics**
+Fargate tasks are ephemeral — they exit after processing. Prometheus cannot scrape a dead container. Metrics are pushed to a Pushgateway (behind a Network Load Balancer) at job completion, making ingestion throughput and latency visible in Grafana without parsing logs.
 
-**Fargate**
-- runs heavier ingestion work
-- better for larger dependencies and longer-running processing
-- avoids EC2 management
+**RAGAS evaluation on every query**
+Faithfulness, answer relevance, and context coverage are scored per query in production. Scores are emitted as Prometheus histograms, making quality degradation visible before users report it.
 
-### Job tracking
-
-Cloud execution uses DynamoDB for shared ingestion state:
-
-- queued
-- processing
-- completed
-- failed
-
-This makes the ingestion flow observable outside any single container or process.
+**Audit trail**
+Every query logs input, retrieved chunks, prompt sent to LLM, response, guardrail decision, and eval scores. Required for regulated industry use cases where AI decisions must be explainable.
 
 ---
 
-## Does The Queue / Fargate Processor Handle OCR Or Text Ingestion?
+## Stack
 
-### Text ingestion
-
-Yes, the ingestion path handles **text-based document ingestion** now.
-
-Current supported formats in the ingestion service include:
-
-- `.pdf`
-- `.txt`
-- `.md`
-- `.docx`
-- `.html`
-- `.csv`
-- `.json` at the control-plane level
-
-The worker parses supported documents, extracts text, chunks it, and pushes vectors into Pinecone.
-
-### OCR
-
-Not as a dedicated OCR pipeline yet.
-
-Right now the project relies on document readers/parsers for text extraction, but it does **not yet include a specialized OCR stage** such as:
-
-- Amazon Textract
-- Tesseract
-- image-to-text fallback pipeline
-
-So the answer is:
-
-- **text ingestion**: yes
-- **full OCR pipeline for scanned/image-only documents**: not yet
-
-### How OCR would fit later
-
-The existing queue/Fargate design is a good base for OCR extension.
-A future OCR path would likely be:
-
-`S3 -> SQS -> Lambda -> Fargate or Textract -> Chunking -> Embeddings -> Pinecone`
+| Layer | Technology |
+|---|---|
+| API | FastAPI, Python 3.13 |
+| Frontend | Next.js 14, TypeScript |
+| Queue | AWS SQS + DLQ |
+| Ingestion worker | AWS ECS Fargate |
+| Routing | AWS Lambda |
+| Storage | AWS S3 |
+| Job state | AWS DynamoDB |
+| Vector store | Pinecone |
+| Embeddings | OpenAI `text-embedding-3-small` |
+| LLM | OpenAI `gpt-4o-mini` |
+| Evaluation | RAGAS (faithfulness, relevance, context coverage) |
+| Metrics | Prometheus + Grafana + Pushgateway (NLB) |
+| Tracing | OpenTelemetry |
+| Secrets | AWS Secrets Manager |
+| Infrastructure | Terraform |
+| Container registry | AWS ECR |
 
 ---
 
-## Security Design
+## Real production numbers
 
-This project uses production-oriented security patterns:
+| Document | Size | Chunks | Batches | Latency |
+|---|---|---|---|---|
+| UK visa register PDF | 23MB | 32,491 | 650 | ~19 min |
+| Witness statement | 100KB | 16 | 1 | 4s |
+| NDA | 34KB | 11–13 | 1 | ~3s |
 
-- raw API keys are stored in **AWS Secrets Manager**
-- Lambda and ECS use **least-privilege IAM roles**
-- document bytes stay in **S3**, not in queue messages
-- Fargate runs in **private subnets**
-- outbound connectivity is provided via **NAT**
-- queue messages carry metadata, not file contents
-
----
-
-## Observability
-
-The system captures several operational signals:
-
-- CloudWatch logs for Lambda and Fargate
-- audit records written by the application
-- retrieval and ingestion logs
-- Prometheus / Grafana support for app-side observability
-
-Example tracked signals:
-
-- file parsed
-- chunk count
-- embedding requests
-- vectors upserted
-- ingestion completion
-- query latency
-- evaluation metrics
+Cumulative across all runs: **260,032 vectors** in Pinecone, **5,208 upsert batches**, **16 ingestion jobs tracked in DynamoDB**.
 
 ---
 
-## Evaluation
+## RAGAS eval scores (production query)
 
-This project includes offline evaluation for the RAG side using Ragas.
+Query against the ingested corpus:
 
-Current tracked themes include:
+```
+faithfulness:       0.692
+answer_relevance:   0.800
+context_coverage:   0.655
+latency:            4,134ms
+```
 
-- faithfulness
-- answer relevancy
-- retrieval quality
-- context usefulness
-
-This helps separate:
-
-- retrieval problems
-- generation problems
-
-instead of treating RAG as a black box.
+Scores are tracked per query in Prometheus and visualised in Grafana.
 
 ---
 
-## AWS Infrastructure Used
+## Project structure
 
-Provisioned components include:
+```
+app/
+├── api/
+│   ├── routes/          # ingest, query, evaluation, audit, health
+│   └── middleware.py    # auth, request ID, request logging
+├── rag/
+│   ├── pipeline.py      # end-to-end query pipeline with observability
+│   ├── ingestion.py     # chunking, embedding, batched upserts
+│   ├── vectorstore.py   # Pinecone client
+│   └── reranker.py      # result reranking
+├── services/
+│   ├── event_processor.py       # SQS event handler
+│   ├── fargate_dispatcher.py    # ECS task launcher
+│   ├── job_repository.py        # DynamoDB job state
+│   └── queue_backend.py         # SQS producer
+├── observability/
+│   ├── metrics.py       # Prometheus counters and histograms
+│   ├── audit.py         # query audit records
+│   └── tracing.py       # OpenTelemetry spans
+├── guardrails/
+│   ├── input_guard.py   # query validation before retrieval
+│   └── output_guard.py  # response validation before return
+├── evals/
+│   └── runner.py        # RAGAS evaluation runner
+└── workers/
+    ├── fargate_entrypoint.py   # Fargate task entry point
+    └── lambda_handler.py       # Lambda SQS handler
 
-- Amazon S3
-- Amazon SQS
-- SQS Dead Letter Queue
-- AWS Lambda
-- Amazon ECS Fargate
-- Amazon DynamoDB
-- AWS Secrets Manager
-- Amazon ECR
-- CloudWatch Logs
-- NAT Gateway and private subnet routing
-
-Terraform is used to provision the infrastructure.
+infra/terraform/           # Full AWS infrastructure as code
+deploy/lambda_dispatcher/  # Lambda routing logic
+```
 
 ---
 
-## Project Status
+## Security
 
-Currently validated:
-
-- local ingestion pipeline
-- cloud event flow from S3 to SQS to Lambda to Fargate
-- Fargate-based document processing
-- OpenAI embedding calls
-- Pinecone vector upserts
-
-Current ingestion architecture docs:
-
-- [docs/document-ingestion-architecture.md](/Users/hamza/Desktop/PROJECTS/retrieval-process-docs/docs/document-ingestion-architecture.md)
-- [docs/event-driven-ingestion.md](/Users/hamza/Desktop/PROJECTS/retrieval-process-docs/docs/event-driven-ingestion.md)
+- API keys stored in AWS Secrets Manager, never in environment variables directly
+- Lambda and ECS use least-privilege IAM roles scoped to specific resources
+- Queue messages carry metadata only — document bytes stay in S3
+- Fargate runs in private subnets with NAT for outbound calls
+- Per-client data isolation via Pinecone namespaces
 
 ---
 
-## Core Stack
+## Running locally
 
-- FastAPI
-- OpenAI
-- Pinecone
-- LangChain
-- LlamaIndex
-- Ragas
-- AWS S3
-- AWS SQS
-- AWS Lambda
-- AWS ECS Fargate
-- DynamoDB
-- Secrets Manager
-- Terraform
-- Prometheus
-- Grafana
+```bash
+# Install dependencies
+uv sync
 
+# Configure environment
+cp .env.example .env  # add OpenAI, Pinecone, AWS credentials
+
+# Start API
+uvicorn app.main:app --reload --port 8000
+
+# Start observability stack (Prometheus + Grafana + Pushgateway)
+docker compose up -d
+```
+
+API docs: `http://localhost:8000/docs`
+Grafana: `http://localhost:3001` (admin / admin)
+
+---
+
+## Infrastructure
+
+All AWS resources are defined in Terraform:
+
+```bash
+cd infra/terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+Provisions: S3, SQS + DLQ, DynamoDB, Lambda, ECS cluster + task definition, ECR, Pushgateway NLB, IAM roles, Secrets Manager references.

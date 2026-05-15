@@ -18,3 +18,6 @@ terraform.tfvars
 lambda.zip
 
 data/sponsor_outreach/
+
+# Claude Code internal directory
+.claude/
